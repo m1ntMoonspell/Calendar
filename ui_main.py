@@ -265,11 +265,23 @@ class MainApp(ctk.CTk):
         except Exception:
             pass
 
-        self.configure(bg=TRANSPARENT_KEY)
+        # 设置所有层级的背景为 TRANSPARENT_KEY
+        # 1. tkinter 根窗口本身的 bg（解决四角黑色残留）
+        tk.Tk.configure(self, bg=TRANSPARENT_KEY)
+        # 2. CTk 层级
+        try:
+            self.configure(fg_color=TRANSPARENT_KEY)
+        except Exception:
+            pass
+        # 3. 主卡片
         self.main_card.configure(fg_color=TRANSPARENT_KEY, border_width=0,
                                   border_color=TRANSPARENT_KEY)
         self.titlebar.configure(fg_color=TRANSPARENT_KEY)
         self.content.configure(fg_color=TRANSPARENT_KEY)
+
+        # 4. 所有子 widget 的 fg_color 也设为 TRANSPARENT_KEY（解决文字黑色描边）
+        self._set_children_bg(self.titlebar, TRANSPARENT_KEY)
+        self._set_children_bg(self.content, TRANSPARENT_KEY)
 
         self.deco_line.pack_forget()
         self._sep_line.pack_forget()
@@ -282,17 +294,43 @@ class MainApp(ctk.CTk):
         except Exception:
             pass
 
-        self.configure(bg=ctk.ThemeManager.theme["CTk"]["fg_color"][1])
+        default_bg = ctk.ThemeManager.theme["CTk"]["fg_color"][1]
+        tk.Tk.configure(self, bg=default_bg)
+        try:
+            self.configure(fg_color=default_bg)
+        except Exception:
+            pass
         self.main_card.configure(fg_color=NORMAL_BG, border_width=1, border_color=BORDER_COLOR)
         self.titlebar.configure(fg_color=TITLEBAR_BG)
         self.content.configure(fg_color="transparent")
 
-        # 恢复装饰元素的显示位置
+        # 恢复所有子 widget 的 fg_color 为 "transparent"（继承父色）
+        self._set_children_bg(self.titlebar, "transparent")
+        self._set_children_bg(self.content, "transparent")
+
         self.deco_line.pack(fill="x", padx=15, pady=(0, 8),
                             before=self.date_label)
+        self.deco_line.configure(fg_color="#EF4444")
         self._sep_line.pack(fill="x", padx=10, pady=4,
                             before=self.calendar_btn)
+        self._sep_line.configure(fg_color=BORDER_COLOR)
         self._resize_handle.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
+
+        # 恢复日历按钮特殊颜色
+        self.calendar_btn.configure(fg_color=BORDER_COLOR)
+
+    @staticmethod
+    def _set_children_bg(parent, color):
+        """递归设置所有 CTk 子 widget 的 fg_color"""
+        for child in parent.winfo_children():
+            try:
+                if isinstance(child, (ctk.CTkLabel, ctk.CTkFrame)):
+                    child.configure(fg_color=color)
+                elif isinstance(child, ctk.CTkButton):
+                    child.configure(fg_color=color)
+            except Exception:
+                pass
+            MainApp._set_children_bg(child, color)
 
     # ======== 设置 ========
 
@@ -317,7 +355,7 @@ class MainApp(ctk.CTk):
     # ======== 关闭/托盘 ========
 
     def _on_close(self):
-        if self._close_to_tray and self.tray:
+        if self._close_to_tray:
             self.withdraw()
         else:
             self.quit_app()
