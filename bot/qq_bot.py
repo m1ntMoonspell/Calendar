@@ -233,15 +233,10 @@ class CalendarBot(botpy.Client):
     async def on_c2c_message_create(self, message: C2CMessage):
         """处理 C2C 单聊消息"""
         content = getattr(message, "content", "") or ""
-        reply = handle_command(content.strip())
-        if reply:
+        reply_text = handle_command(content.strip())
+        if reply_text:
             try:
-                await message._api.post_c2c_message(
-                    openid=message.author.user_openid,
-                    msg_type=0,
-                    msg_id=message.id,
-                    content=reply
-                )
+                await message.reply(content=reply_text, msg_type=0)
             except Exception as e:
                 log.error(f"C2C reply error: {e}")
 
@@ -249,15 +244,10 @@ class CalendarBot(botpy.Client):
         """处理群聊 @机器人消息"""
         content = getattr(message, "content", "") or ""
         content = re.sub(r"<@!\d+>", "", content).strip()
-        reply = handle_command(content)
-        if reply:
+        reply_text = handle_command(content)
+        if reply_text:
             try:
-                await message._api.post_group_message(
-                    group_openid=message.group_openid,
-                    msg_type=0,
-                    msg_id=message.id,
-                    content=reply
-                )
+                await message.reply(content=reply_text, msg_type=0)
             except Exception as e:
                 log.error(f"Group reply error: {e}")
 
@@ -265,10 +255,10 @@ class CalendarBot(botpy.Client):
         """处理频道 @机器人消息 (兼容频道场景)"""
         content = getattr(message, "content", "") or ""
         content = re.sub(r"<@!\d+>", "", content).strip()
-        reply = handle_command(content)
-        if reply:
+        reply_text = handle_command(content)
+        if reply_text:
             try:
-                await message.reply(content=reply)
+                await message.reply(content=reply_text)
             except Exception as e:
                 log.error(f"Channel reply error: {e}")
 
