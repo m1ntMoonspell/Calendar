@@ -5,8 +5,7 @@
 - 选中日期虚线框
 - 有计划的日期下方绿色圆点
 - 有文件的日期下方红色圆点
-- 右键弹出"创建计划"菜单
-- 双击查看计划和文件
+- 双击查看/编辑计划和文件
 - 向上弹出，跟随主窗口移动
 """
 
@@ -15,7 +14,7 @@ import customtkinter as ctk
 import calendar
 from datetime import date, datetime
 import database
-from ui_plan import PlanCreateDialog, PlanViewDialog
+from ui_plan import PlanViewDialog
 
 
 class MiniCalendarPopup(ctk.CTkToplevel):
@@ -165,7 +164,6 @@ class MiniCalendarPopup(ctk.CTkToplevel):
         # Canvas 事件绑定
         self.canvas.bind('<Button-1>', self._on_click)
         self.canvas.bind('<Double-Button-1>', self._on_double_click)
-        self.canvas.bind('<Button-3>', self._on_right_click)
         self.canvas.bind('<Motion>', self._on_motion)
         self.canvas.bind('<Leave>', self._on_leave)
 
@@ -281,20 +279,14 @@ class MiniCalendarPopup(ctk.CTkToplevel):
         d = self._get_date_at(event)
         if d:
             self.selected_date = d
-            PlanViewDialog(self, d.isoformat())
 
-    def _on_right_click(self, event):
-        d = self._get_date_at(event)
-        if d:
-            self.selected_date = d
-            self._draw_calendar()
-            menu = tk.Menu(self, tearoff=0, font=("Microsoft YaHei", 11))
-            menu.configure(bg="#2D2D44", fg="#E5E7EB", activebackground="#3B82F6")
-            menu.add_command(
-                label=f"📝 创建计划 ({d.isoformat()})",
-                command=lambda: self._create_plan(d)
-            )
-            menu.post(event.x_root, event.y_root)
+            def _on_plan_changed():
+                self.plan_dates = database.get_dates_with_plans()
+                self._draw_calendar()
+                if self.on_change:
+                    self.on_change()
+
+            PlanViewDialog(self, d.isoformat(), on_change=_on_plan_changed)
 
     def _on_motion(self, event):
         d = self._get_date_at(event)
@@ -305,14 +297,6 @@ class MiniCalendarPopup(ctk.CTkToplevel):
     def _on_leave(self, event):
         self.hover_date = None
         self._draw_calendar()
-
-    def _create_plan(self, d):
-        def on_save():
-            self.plan_dates = database.get_dates_with_plans()
-            self._draw_calendar()
-            if self.on_change:
-                self.on_change()
-        PlanCreateDialog(self, d.isoformat(), on_save=on_save)
 
     def _prev_month(self):
         if self.current_month == 1:

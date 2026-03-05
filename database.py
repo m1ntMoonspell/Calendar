@@ -43,13 +43,27 @@ def init_db():
 
 
 def add_plan(date_str, content):
-    """添加一条计划"""
+    """添加一条计划，返回新计划的 id"""
     conn = get_connection()
     cursor = conn.cursor()
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute(
         "INSERT INTO plans (date, content, created_at) VALUES (?, ?, ?)",
         (date_str, content, created_at)
+    )
+    plan_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return plan_id
+
+
+def update_plan(plan_id, content):
+    """更新一条计划的内容"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE plans SET content = ? WHERE id = ?",
+        (content, plan_id)
     )
     conn.commit()
     conn.close()

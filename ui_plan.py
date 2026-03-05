@@ -1,161 +1,55 @@
 """
-计划创建/查看对话框
+计划查看/编辑对话框
+双击日期打开后可直接新建和编辑计划（单行输入，回车确认并新增下一行）
 """
 
 import customtkinter as ctk
-from datetime import datetime
 import database
 
 
-class PlanCreateDialog(ctk.CTkToplevel):
-    """创建计划对话框"""
-
-    def __init__(self, parent, date_str, on_save=None):
-        super().__init__(parent)
-        self.date_str = date_str
-        self.on_save = on_save
-
-        self.title(f"📝 创建计划 — {date_str}")
-        self.geometry("480x520")
-        self.resizable(False, False)
-        self.transient(parent)
-        self.grab_set()
-
-        # 窗口居中
-        self.update_idletasks()
-        x = parent.winfo_rootx() + (parent.winfo_width() - 480) // 2
-        y = parent.winfo_rooty() + (parent.winfo_height() - 520) // 2
-        self.geometry(f"+{max(0,x)}+{max(0,y)}")
-
-        self._build_ui()
-
-    def _build_ui(self):
-        # 标题
-        title_label = ctk.CTkLabel(
-            self, text=f"📅 {self.date_str} 的计划",
-            font=ctk.CTkFont(size=18, weight="bold")
-        )
-        title_label.pack(pady=(20, 5))
-
-        hint_label = ctk.CTkLabel(
-            self, text="每行输入一个计划步骤",
-            font=ctk.CTkFont(size=12),
-            text_color="gray"
-        )
-        hint_label.pack(pady=(0, 10))
-
-        # 文本输入区域
-        self.text_input = ctk.CTkTextbox(
-            self, width=420, height=350,
-            font=ctk.CTkFont(size=14),
-            border_width=2,
-            border_color="#3B82F6",
-            corner_radius=12,
-        )
-        self.text_input.pack(padx=20, pady=5)
-
-        # 按钮区域
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=15)
-
-        cancel_btn = ctk.CTkButton(
-            btn_frame, text="取消", width=100,
-            fg_color="#6B7280", hover_color="#4B5563",
-            corner_radius=10,
-            command=self.destroy
-        )
-        cancel_btn.pack(side="left", padx=5)
-
-        save_btn = ctk.CTkButton(
-            btn_frame, text="💾 保存计划", width=150,
-            fg_color="#10B981", hover_color="#059669",
-            corner_radius=10,
-            command=self._save
-        )
-        save_btn.pack(side="right", padx=5)
-
-    def _save(self):
-        content = self.text_input.get("1.0", "end").strip()
-        if not content:
-            return
-
-        # 逐行保存每个计划步骤
-        lines = [line.strip() for line in content.split('\n') if line.strip()]
-        for line in lines:
-            database.add_plan(self.date_str, line)
-
-        if self.on_save:
-            self.on_save()
-        self.destroy()
-
-
 class PlanViewDialog(ctk.CTkToplevel):
-    """查看计划和文件的对话框"""
+    """查看、新建、编辑计划和文件的对话框"""
 
-    def __init__(self, parent, date_str):
+    def __init__(self, parent, date_str, on_change=None):
         super().__init__(parent)
         self.date_str = date_str
+        self.on_change = on_change
 
-        self.title(f"📋 {date_str} 的计划与文件")
+        self.title(f"\U0001f4cb {date_str} 的计划与文件")
         self.geometry("520x600")
         self.resizable(False, True)
         self.transient(parent)
         self.grab_set()
 
-        # 窗口居中
         self.update_idletasks()
         x = parent.winfo_rootx() + (parent.winfo_width() - 520) // 2
         y = parent.winfo_rooty() + (parent.winfo_height() - 600) // 2
         self.geometry(f"+{max(0,x)}+{max(0,y)}")
 
+        self._entries = []
         self._build_ui()
 
     def _build_ui(self):
         # === 计划部分 ===
         plan_label = ctk.CTkLabel(
-            self, text="📝 今日计划",
+            self, text="\U0001f4dd 今日计划",
             font=ctk.CTkFont(size=16, weight="bold"),
             anchor="w"
         )
         plan_label.pack(fill="x", padx=20, pady=(15, 5))
 
+        self.plan_frame = ctk.CTkScrollableFrame(
+            self, height=220,
+            corner_radius=12,
+            border_width=1,
+            border_color="#374151"
+        )
+        self.plan_frame.pack(fill="x", padx=20, pady=5)
+
         plans = database.get_plans_by_date(self.date_str)
-        if plans:
-            plan_frame = ctk.CTkScrollableFrame(
-                self, height=220,
-                corner_radius=12,
-                border_width=1,
-                border_color="#374151"
-            )
-            plan_frame.pack(fill="x", padx=20, pady=5)
-
-            for i, plan in enumerate(plans):
-                item_frame = ctk.CTkFrame(plan_frame, fg_color="transparent")
-                item_frame.pack(fill="x", padx=5, pady=2)
-
-                step_label = ctk.CTkLabel(
-                    item_frame,
-                    text=f"  {i+1}. {plan['content']}",
-                    font=ctk.CTkFont(size=13),
-                    anchor="w"
-                )
-                step_label.pack(side="left", fill="x", expand=True)
-
-                time_label = ctk.CTkLabel(
-                    item_frame,
-                    text=plan['created_at'].split(' ')[1] if ' ' in plan['created_at'] else '',
-                    font=ctk.CTkFont(size=11),
-                    text_color="gray",
-                    anchor="e"
-                )
-                time_label.pack(side="right", padx=5)
-        else:
-            no_plan = ctk.CTkLabel(
-                self, text="暂无计划",
-                font=ctk.CTkFont(size=13),
-                text_color="gray"
-            )
-            no_plan.pack(padx=20, pady=10)
+        for plan in plans:
+            self._add_entry(plan_id=plan['id'], content=plan['content'])
+        self._add_entry()
 
         # 分割线
         separator = ctk.CTkFrame(self, height=2, fg_color="#374151")
@@ -163,7 +57,7 @@ class PlanViewDialog(ctk.CTkToplevel):
 
         # === 文件部分 ===
         file_label = ctk.CTkLabel(
-            self, text="📁 兴趣文件",
+            self, text="\U0001f4c1 兴趣文件",
             font=ctk.CTkFont(size=16, weight="bold"),
             anchor="w"
         )
@@ -184,9 +78,10 @@ class PlanViewDialog(ctk.CTkToplevel):
                 row.pack(fill="x", padx=5, pady=2)
 
                 type_emoji = {
-                    '图片': '🖼️', '文档': '📄', '音频': '🎵',
-                    '视频': '🎬', '压缩包': '📦', '代码': '💻', '其他': '📎'
-                }.get(f['file_type'], '📎')
+                    '图片': '\U0001f5bc\ufe0f', '文档': '\U0001f4c4',
+                    '音频': '\U0001f3b5', '视频': '\U0001f3ac',
+                    '压缩包': '\U0001f4e6', '代码': '\U0001f4bb', '其他': '\U0001f4ce'
+                }.get(f['file_type'], '\U0001f4ce')
 
                 name_label = ctk.CTkLabel(
                     row,
@@ -212,7 +107,6 @@ class PlanViewDialog(ctk.CTkToplevel):
             )
             no_file.pack(padx=20, pady=10)
 
-        # 关闭按钮
         close_btn = ctk.CTkButton(
             self, text="关闭", width=100,
             fg_color="#6B7280", hover_color="#4B5563",
@@ -220,6 +114,75 @@ class PlanViewDialog(ctk.CTkToplevel):
             command=self.destroy
         )
         close_btn.pack(pady=15)
+
+    def _add_entry(self, plan_id=None, content=""):
+        """添加一个计划输入行"""
+        row = ctk.CTkFrame(self.plan_frame, fg_color="transparent")
+        row.pack(fill="x", padx=5, pady=2)
+
+        idx = len(self._entries) + 1
+        num_label = ctk.CTkLabel(
+            row, text=f"{idx}.",
+            font=ctk.CTkFont(size=13),
+            width=28, anchor="e"
+        )
+        num_label.pack(side="left", padx=(0, 5))
+
+        entry = ctk.CTkEntry(
+            row,
+            font=ctk.CTkFont(size=13),
+            height=32,
+            border_width=1,
+            border_color="#374151",
+            corner_radius=6,
+            placeholder_text="输入计划，回车确认..."
+        )
+        entry.pack(side="left", fill="x", expand=True)
+
+        if content:
+            entry.insert(0, content)
+
+        info = {
+            'plan_id': plan_id,
+            'entry': entry,
+            'row': row,
+            'original': content,
+        }
+        self._entries.append(info)
+
+        entry.bind('<Return>', lambda e, i=info: self._on_enter(i))
+
+        if not content:
+            self.after(100, entry.focus_set)
+
+        return info
+
+    def _on_enter(self, info):
+        """回车键处理：保存/更新计划，创建新行"""
+        content = info['entry'].get().strip()
+        if not content:
+            return
+
+        if info['plan_id'] is None:
+            plan_id = database.add_plan(self.date_str, content)
+            info['plan_id'] = plan_id
+            info['original'] = content
+            self._notify_change()
+            self._add_entry()
+        else:
+            if content != info['original']:
+                database.update_plan(info['plan_id'], content)
+                info['original'] = content
+                self._notify_change()
+            current_idx = self._entries.index(info)
+            if current_idx < len(self._entries) - 1:
+                self._entries[current_idx + 1]['entry'].focus_set()
+            else:
+                self._add_entry()
+
+    def _notify_change(self):
+        if self.on_change:
+            self.on_change()
 
     def _open_file(self, path):
         import os
