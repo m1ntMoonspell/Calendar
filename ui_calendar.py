@@ -68,7 +68,27 @@ class MiniCalendarPopup(ctk.CTkToplevel):
         # 延迟定位，确保窗口已经完全创建
         self.after(50, self.reposition)
 
+        # 点击日历窗口外部时自动关闭
+        self._parent_bind_id = self.parent_window.bind(
+            '<Button-1>', self._on_parent_click, add='+')
+        self.bind('<Escape>', lambda e: self.destroy())
+
+    def _on_parent_click(self, event):
+        """主窗口被点击时关闭日历弹窗（点击日历按钮本身除外，由 toggle 处理）"""
+        try:
+            w = event.widget
+            if w == self.anchor_widget or w == getattr(self.anchor_widget, '_canvas', None) \
+                    or w == getattr(self.anchor_widget, '_text_label', None):
+                return
+        except Exception:
+            pass
+        self.after(50, self.destroy)
+
     def destroy(self):
+        try:
+            self.parent_window.unbind('<Button-1>', self._parent_bind_id)
+        except Exception:
+            pass
         if self.on_destroy_cb:
             try:
                 self.on_destroy_cb()
