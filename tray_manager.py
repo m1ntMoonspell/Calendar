@@ -105,11 +105,17 @@ class _Win32Tray:
         import ctypes
         from ctypes import wintypes
 
+        LRESULT = wintypes.LPARAM
         WNDPROCTYPE = ctypes.WINFUNCTYPE(
-            ctypes.c_long, wintypes.HWND, wintypes.UINT,
+            LRESULT, wintypes.HWND, wintypes.UINT,
             wintypes.WPARAM, wintypes.LPARAM
         )
         self._wnd_proc_cb = WNDPROCTYPE(self._wnd_proc)
+
+        ctypes.windll.user32.DefWindowProcW.argtypes = [
+            wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
+        ]
+        ctypes.windll.user32.DefWindowProcW.restype = LRESULT
 
         hinstance = ctypes.windll.kernel32.GetModuleHandleW(None)
 

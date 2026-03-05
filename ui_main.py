@@ -270,7 +270,7 @@ class MainApp(ctk.CTk):
             self._restore_bg()
 
     def _apply_transparent_bg(self):
-        """锁定模式：窗口边框透明，内容区保留深色背景确保文字无描边"""
+        """锁定模式：所有背景透明，内容文字正常显示"""
         try:
             self.attributes('-transparentcolor', TRANSPARENT_KEY)
         except Exception:
@@ -285,29 +285,19 @@ class MainApp(ctk.CTk):
         self.main_card.configure(corner_radius=0, border_width=0,
                                   fg_color=TRANSPARENT_KEY)
 
-        self.titlebar.configure(fg_color=TRANSPARENT_KEY)
-        for child in self.titlebar.winfo_children():
-            if isinstance(child, ctk.CTkFrame):
-                child.configure(fg_color=TRANSPARENT_KEY)
-
-        for btn in (self._lock_btn, self._close_btn, self._settings_btn):
-            btn.configure(fg_color=TITLEBAR_BG)
-            canvas = getattr(btn, '_canvas', None)
-            if canvas:
-                try:
-                    canvas.configure(bg=TITLEBAR_BG)
-                except Exception:
-                    pass
-
-        self.title_lbl.pack_forget()
-
-        self.content.configure(fg_color=NORMAL_BG, corner_radius=12)
-
         self._sep_line.pack_forget()
         self._resize_handle.place_forget()
         self.drop_feedback.pack_forget()
+        self.title_lbl.pack_forget()
+
+        self._make_all_transparent(self)
 
         self.calendar_btn.configure(fg_color=BORDER_COLOR)
+        if hasattr(self.calendar_btn, '_canvas'):
+            for item in self.calendar_btn._canvas.find_all():
+                if self.calendar_btn._canvas.type(item) in ('rectangle', 'oval'):
+                    self.calendar_btn._canvas.itemconfigure(
+                        item, fill=BORDER_COLOR, outline=BORDER_COLOR)
 
     def _restore_bg(self):
         """解锁模式：恢复正常外观"""
@@ -334,9 +324,19 @@ class MainApp(ctk.CTk):
         for btn in (self._lock_btn, self._close_btn, self._settings_btn):
             btn.configure(fg_color="transparent")
 
+        self.title_lbl.configure(fg_color="transparent")
         self.title_lbl.pack(side="left", padx=2)
 
         self.content.configure(fg_color="transparent")
+
+        for lbl in (self.date_label, self.holiday_name_label,
+                    self.days_label, self.days_unit_label,
+                    self.time_label, self.days_off_label,
+                    self.drop_feedback, self._resize_handle):
+            try:
+                lbl.configure(fg_color="transparent")
+            except Exception:
+                pass
 
         self._force_ctk_redraw(self)
 
@@ -345,6 +345,52 @@ class MainApp(ctk.CTk):
         self._resize_handle.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
         self.drop_feedback.pack(pady=(2, 0))
         self.calendar_btn.configure(fg_color=BORDER_COLOR)
+
+    @staticmethod
+    def _make_all_transparent(widget):
+        """递归设置所有 widget 的底层 bg + canvas items 为透明"""
+        try:
+            widget.configure(bg=TRANSPARENT_KEY)
+        except Exception:
+            pass
+
+        if isinstance(widget, (ctk.CTkFrame, ctk.CTkLabel, ctk.CTkButton)):
+            try:
+                widget.configure(fg_color=TRANSPARENT_KEY)
+            except Exception:
+                pass
+
+        canvas = getattr(widget, '_canvas', None)
+        if canvas:
+            try:
+                canvas.configure(bg=TRANSPARENT_KEY)
+            except Exception:
+                pass
+            for item in canvas.find_all():
+                item_type = canvas.type(item)
+                if item_type in ('rectangle', 'oval', 'polygon'):
+                    try:
+                        canvas.itemconfigure(item, fill=TRANSPARENT_KEY,
+                                              outline=TRANSPARENT_KEY)
+                    except Exception:
+                        pass
+
+        label = getattr(widget, '_label', None)
+        if label:
+            try:
+                label.configure(bg=TRANSPARENT_KEY)
+            except Exception:
+                pass
+
+        text_label = getattr(widget, '_text_label', None)
+        if text_label:
+            try:
+                text_label.configure(bg=TRANSPARENT_KEY)
+            except Exception:
+                pass
+
+        for child in widget.winfo_children():
+            MainApp._make_all_transparent(child)
 
     @staticmethod
     def _force_ctk_redraw(widget):
