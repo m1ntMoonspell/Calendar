@@ -163,7 +163,9 @@ def handle_command(text):
             lines = [f"📋 {today} 的计划："]
             for i, p in enumerate(plans, 1):
                 alarm = f" ⏰{p['alarm_time']}" if p.get("alarm_time") else ""
-                lines.append(f"  {i}. [ID:{p['id']}] {p['content']}{alarm}")
+                created = p.get("created_at", "")
+                time_str = f" ({created[11:16]})" if len(created) >= 16 else ""
+                lines.append(f"  {i}. {p['content']}{alarm}{time_str}")
             return "\n".join(lines)
 
         elif cmd == "/添加计划":
@@ -190,7 +192,9 @@ def handle_command(text):
             lines = [f"📋 {date_str} 的计划："]
             for i, p in enumerate(plans, 1):
                 alarm = f" ⏰{p['alarm_time']}" if p.get("alarm_time") else ""
-                lines.append(f"  {i}. [ID:{p['id']}] {p['content']}{alarm}")
+                created = p.get("created_at", "")
+                time_str = f" ({created[11:16]})" if len(created) >= 16 else ""
+                lines.append(f"  {i}. {p['content']}{alarm}{time_str}")
             return "\n".join(lines)
 
         elif cmd == "/删除计划":
@@ -216,30 +220,38 @@ def handle_command(text):
 
 def handle_attachments(attachments):
     """处理消息中的文件附件，自动保存到今天的文件记录，返回回复文本"""
+    if not attachments:
+        return None
+
     today = date.today().isoformat()
     results = []
     for att in attachments:
-        filename = att.get("filename", "")
-        file_url = att.get("url", "")
-        content_type = att.get("content_type", "")
+        filename = getattr(att, "filename", None) or ""
+        file_url = getattr(att, "url", None) or ""
+        content_type = getattr(att, "content_type", None) or ""
         if not filename:
-            if content_type.startswith("image/"):
+            if "image" in content_type:
                 ext = content_type.split("/")[-1].split(";")[0]
                 filename = f"image.{ext}"
+            elif "video" in content_type:
+                filename = "video.mp4"
+            elif "audio" in content_type or "voice" in content_type:
+                filename = "voice.silk"
             else:
-                filename = "unnamed_file"
+                filename = "file"
         try:
             result = api_add_file(today, filename, file_url)
-            results.append(f"  ✅ {filename}")
+            results.append(filename)
+            log.info(f"File saved: {filename} -> {today}")
         except Exception as e:
-            results.append(f"  ❌ {filename}: {e}")
+            log.error(f"File save failed: {filename}: {e}")
 
     if not results:
         return None
 
-    header = f"📁 已保存 {len(results)} 个文件到 {today}：" if len(results) > 1 \
-        else f"📁 文件已保存到 {today}："
-    return header + "\n" + "\n".join(results)
+    if len(results) == 1:
+        return f"已保存文件 {results[0]} 到 {today}"
+    return f"已保存 {len(results)} 个文件到 {today}"
 
 
 class CalendarBot(botpy.Client):
