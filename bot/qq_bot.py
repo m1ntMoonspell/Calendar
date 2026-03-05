@@ -111,6 +111,9 @@ DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
 HELP_TEXT = """📅 桌面助手 QQ 机器人指令：
 
+📎 直接发送文件
+  发送任意文件/图片/视频，自动保存到今天的兴趣文件
+
 /添加计划 日期 内容
   例: /添加计划 2026-03-05 去超市买菜
   例: /添加计划 今天 写周报
@@ -123,9 +126,6 @@ HELP_TEXT = """📅 桌面助手 QQ 机器人指令：
 
 /删除计划 ID
   例: /删除计划 3
-
-/添加文件 日期 文件名
-  例: /添加文件 2026-03-05 报告.pdf
 
 /帮助
   显示本帮助信息"""
@@ -203,16 +203,6 @@ def handle_command(text):
             api_delete_plan(plan_id)
             return f"🗑️ 计划 ID:{plan_id} 已删除"
 
-        elif cmd == "/添加文件":
-            if len(parts) < 3:
-                return "❌ 格式: /添加文件 日期 文件名\n例: /添加文件 今天 报告.pdf"
-            date_str = parse_date(parts[1])
-            if not date_str:
-                return "❌ 无法解析日期"
-            filename = parts[2].strip()
-            result = api_add_file(date_str, filename)
-            return f"📁 文件记录已添加到 {date_str}\n📄 {filename}"
-
         else:
             return f"❓ 未知指令: {cmd}\n输入 /帮助 查看所有指令"
 
@@ -224,6 +214,34 @@ def handle_command(text):
 
 # ──────────────── botpy 客户端 ────────────────
 
+def handle_attachments(attachments):
+    """处理消息中的文件附件，自动保存到今天的文件记录，返回回复文本"""
+    today = date.today().isoformat()
+    results = []
+    for att in attachments:
+        filename = att.get("filename", "")
+        file_url = att.get("url", "")
+        content_type = att.get("content_type", "")
+        if not filename:
+            if content_type.startswith("image/"):
+                ext = content_type.split("/")[-1].split(";")[0]
+                filename = f"image.{ext}"
+            else:
+                filename = "unnamed_file"
+        try:
+            result = api_add_file(today, filename, file_url)
+            results.append(f"  ✅ {filename}")
+        except Exception as e:
+            results.append(f"  ❌ {filename}: {e}")
+
+    if not results:
+        return None
+
+    header = f"📁 已保存 {len(results)} 个文件到 {today}：" if len(results) > 1 \
+        else f"📁 文件已保存到 {today}："
+    return header + "\n" + "\n".join(results)
+
+
 class CalendarBot(botpy.Client):
     """QQ 机器人客户端，处理 C2C 单聊和群聊 @机器人消息"""
 
@@ -231,34 +249,70 @@ class CalendarBot(botpy.Client):
         log.info("🤖 桌面助手 QQ 机器人已上线!")
 
     async def on_c2c_message_create(self, message: C2CMessage):
-        """处理 C2C 单聊消息"""
-        content = getattr(message, "content", "") or ""
-        reply_text = handle_command(content.strip())
-        if reply_text:
+        """处理 C2C 单聊消息：自动识别文件附件 + 文本指令"""
+        replies = []
+
+        attachments = getattr(message, "attachments", None)
+        if attachments:
+            file_reply = handle_attachments(attachments)
+            if file_reply:
+                replies.append(file_reply)
+
+        content = (getattr(message, "content", "") or "").strip()
+        if content.startswith("/"):
+            cmd_reply = handle_command(content)
+            if cmd_reply:
+                replies.append(cmd_reply)
+
+        if replies:
             try:
-                await message.reply(content=reply_text, msg_type=0)
+                await message.reply(content="\n".join(replies), msg_type=0)
             except Exception as e:
                 log.error(f"C2C reply error: {e}")
 
     async def on_group_at_message_create(self, message: GroupMessage):
-        """处理群聊 @机器人消息"""
-        content = getattr(message, "content", "") or ""
+        """处理群聊 @机器人消息：自动识别文件附件 + 文本指令"""
+        replies = []
+
+        attachments = getattr(message, "attachments", None)
+        if attachments:
+            file_reply = handle_attachments(attachments)
+            if file_reply:
+                replies.append(file_reply)
+
+        content = (getattr(message, "content", "") or "")
         content = re.sub(r"<@!\d+>", "", content).strip()
-        reply_text = handle_command(content)
-        if reply_text:
+        if content.startswith("/"):
+            cmd_reply = handle_command(content)
+            if cmd_reply:
+                replies.append(cmd_reply)
+
+        if replies:
             try:
-                await message.reply(content=reply_text, msg_type=0)
+                await message.reply(content="\n".join(replies), msg_type=0)
             except Exception as e:
                 log.error(f"Group reply error: {e}")
 
     async def on_at_message_create(self, message: Message):
         """处理频道 @机器人消息 (兼容频道场景)"""
-        content = getattr(message, "content", "") or ""
+        replies = []
+
+        attachments = getattr(message, "attachments", None)
+        if attachments:
+            file_reply = handle_attachments(attachments)
+            if file_reply:
+                replies.append(file_reply)
+
+        content = (getattr(message, "content", "") or "")
         content = re.sub(r"<@!\d+>", "", content).strip()
-        reply_text = handle_command(content)
-        if reply_text:
+        if content.startswith("/"):
+            cmd_reply = handle_command(content)
+            if cmd_reply:
+                replies.append(cmd_reply)
+
+        if replies:
             try:
-                await message.reply(content=reply_text)
+                await message.reply(content="\n".join(replies))
             except Exception as e:
                 log.error(f"Channel reply error: {e}")
 
