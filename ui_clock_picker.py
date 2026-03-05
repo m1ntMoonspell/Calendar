@@ -1,6 +1,7 @@
 """
 24 小时制时钟选择器对话框
 用于为计划设置闹钟时间
+支持上下箭头调整 + 直接输入数字
 """
 
 import customtkinter as ctk
@@ -29,8 +30,8 @@ class ClockPickerDialog(ctk.CTkToplevel):
 
         self.update_idletasks()
         px = parent.winfo_rootx() + parent.winfo_width() // 2 - 120
-        py = parent.winfo_rooty() + parent.winfo_height() // 2 - 100
-        self.geometry(f"240x200+{max(0,px)}+{max(0,py)}")
+        py = parent.winfo_rooty() + parent.winfo_height() // 2 - 110
+        self.geometry(f"240x210+{max(0,px)}+{max(0,py)}")
 
         self.bind('<FocusOut>', lambda e: self.after(150, self._check_focus))
 
@@ -62,10 +63,17 @@ class ClockPickerDialog(ctk.CTkToplevel):
         h_col = ctk.CTkFrame(picker, fg_color="transparent")
         h_col.pack(side="left", padx=8)
         ctk.CTkButton(h_col, text="\u25b2", command=lambda: self._adj_hour(1), **btn_cfg).pack()
-        self._hour_lbl = ctk.CTkLabel(h_col, text=f"{self._hour:02d}",
-                                       font=ctk.CTkFont(size=28, weight="bold"),
-                                       text_color="#E5E7EB", width=50)
-        self._hour_lbl.pack(pady=4)
+
+        self._hour_entry = ctk.CTkEntry(
+            h_col, width=56, height=40, justify="center",
+            font=ctk.CTkFont(size=26, weight="bold"),
+            text_color="#E5E7EB", fg_color="#2D2D44",
+            border_width=1, border_color="#374151", corner_radius=8)
+        self._hour_entry.insert(0, f"{self._hour:02d}")
+        self._hour_entry.pack(pady=4)
+        self._hour_entry.bind('<FocusOut>', lambda e: self._validate_hour())
+        self._hour_entry.bind('<Return>', lambda e: self._min_entry.focus_set())
+
         ctk.CTkButton(h_col, text="\u25bc", command=lambda: self._adj_hour(-1), **btn_cfg).pack()
 
         sep = ctk.CTkLabel(picker, text=":", font=ctk.CTkFont(size=28, weight="bold"),
@@ -76,17 +84,24 @@ class ClockPickerDialog(ctk.CTkToplevel):
         m_col = ctk.CTkFrame(picker, fg_color="transparent")
         m_col.pack(side="left", padx=8)
         ctk.CTkButton(m_col, text="\u25b2", command=lambda: self._adj_min(5), **btn_cfg).pack()
-        self._min_lbl = ctk.CTkLabel(m_col, text=f"{self._minute:02d}",
-                                      font=ctk.CTkFont(size=28, weight="bold"),
-                                      text_color="#E5E7EB", width=50)
-        self._min_lbl.pack(pady=4)
+
+        self._min_entry = ctk.CTkEntry(
+            m_col, width=56, height=40, justify="center",
+            font=ctk.CTkFont(size=26, weight="bold"),
+            text_color="#E5E7EB", fg_color="#2D2D44",
+            border_width=1, border_color="#374151", corner_radius=8)
+        self._min_entry.insert(0, f"{self._minute:02d}")
+        self._min_entry.pack(pady=4)
+        self._min_entry.bind('<FocusOut>', lambda e: self._validate_min())
+        self._min_entry.bind('<Return>', lambda e: self._confirm())
+
         ctk.CTkButton(m_col, text="\u25bc", command=lambda: self._adj_min(-5), **btn_cfg).pack()
 
         # Buttons
         btn_row = ctk.CTkFrame(outer, fg_color="transparent")
         btn_row.pack(fill="x", padx=16, pady=(8, 12))
 
-        ctk.CTkButton(btn_row, text="\u53d6\u6d88", width=70, height=30,
+        ctk.CTkButton(btn_row, text="\u53d6\u6d88", width=65, height=30,
                        fg_color="#374151", hover_color="#4B5563",
                        corner_radius=8, font=ctk.CTkFont(size=12),
                        command=self.destroy).pack(side="left")
@@ -96,20 +111,46 @@ class ClockPickerDialog(ctk.CTkToplevel):
                        corner_radius=8, font=ctk.CTkFont(size=12),
                        command=self._clear).pack(side="left", padx=4)
 
-        ctk.CTkButton(btn_row, text="\u2714 \u786e\u5b9a", width=70, height=30,
+        ctk.CTkButton(btn_row, text="\u2714 \u786e\u5b9a", width=65, height=30,
                        fg_color="#10B981", hover_color="#059669",
                        corner_radius=8, font=ctk.CTkFont(size=12),
                        command=self._confirm).pack(side="right")
 
+    def _validate_hour(self):
+        txt = self._hour_entry.get().strip()
+        try:
+            v = int(txt)
+            self._hour = max(0, min(23, v))
+        except ValueError:
+            pass
+        self._hour_entry.delete(0, "end")
+        self._hour_entry.insert(0, f"{self._hour:02d}")
+
+    def _validate_min(self):
+        txt = self._min_entry.get().strip()
+        try:
+            v = int(txt)
+            self._minute = max(0, min(59, v))
+        except ValueError:
+            pass
+        self._min_entry.delete(0, "end")
+        self._min_entry.insert(0, f"{self._minute:02d}")
+
     def _adj_hour(self, delta):
+        self._validate_hour()
         self._hour = (self._hour + delta) % 24
-        self._hour_lbl.configure(text=f"{self._hour:02d}")
+        self._hour_entry.delete(0, "end")
+        self._hour_entry.insert(0, f"{self._hour:02d}")
 
     def _adj_min(self, delta):
+        self._validate_min()
         self._minute = (self._minute + delta) % 60
-        self._min_lbl.configure(text=f"{self._minute:02d}")
+        self._min_entry.delete(0, "end")
+        self._min_entry.insert(0, f"{self._minute:02d}")
 
     def _confirm(self):
+        self._validate_hour()
+        self._validate_min()
         time_str = f"{self._hour:02d}:{self._minute:02d}"
         self.on_select(time_str)
         self.destroy()
