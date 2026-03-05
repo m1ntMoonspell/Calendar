@@ -133,18 +133,9 @@ class SettingsDialog(ctk.CTkToplevel):
         self._build_ui()
 
         self.update_idletasks()
-        px = parent.winfo_rootx() + parent.winfo_width() // 2 - 150
-        py = parent.winfo_rooty() + parent.winfo_height() // 2 - 130
-        self.geometry(f"300x280+{max(0,px)}+{max(0,py)}")
-
-        self.bind('<FocusOut>', lambda e: self.after(200, self._check_focus))
-
-    def _check_focus(self):
-        try:
-            if not self.focus_get():
-                self.destroy()
-        except Exception:
-            pass
+        px = parent.winfo_rootx() + parent.winfo_width() // 2 - 170
+        py = parent.winfo_rooty() + parent.winfo_height() // 2 - 240
+        self.geometry(f"340x480+{max(0,px)}+{max(0,py)}")
 
     def _build_ui(self):
         outer = ctk.CTkFrame(self, fg_color="#1E1E2E", corner_radius=14,
@@ -164,28 +155,32 @@ class SettingsDialog(ctk.CTkToplevel):
                        text_color="#9CA3AF", font=ctk.CTkFont(size=13),
                        corner_radius=6, command=self.destroy).pack(side="right")
 
-        # Transparency slider
-        alpha_frame = ctk.CTkFrame(outer, fg_color="transparent")
-        alpha_frame.pack(fill="x", padx=16, pady=(12, 4))
+        scroll = ctk.CTkScrollableFrame(outer, fg_color="transparent",
+                                         scrollbar_button_color="#374151")
+        scroll.pack(fill="both", expand=True, padx=4, pady=(4, 8))
+
+        # ──── 透明度 ────
+        alpha_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        alpha_frame.pack(fill="x", padx=12, pady=(8, 4))
         ctk.CTkLabel(alpha_frame, text="\u900f\u660e\u5ea6",
                      font=ctk.CTkFont(size=13), text_color="#9CA3AF").pack(side="left")
         self._alpha_label = ctk.CTkLabel(alpha_frame, text=f"{int(self._alpha_val*100)}%",
                                           font=ctk.CTkFont(size=12), text_color="#60A5FA", width=40)
         self._alpha_label.pack(side="right")
 
-        self._slider = ctk.CTkSlider(outer, from_=20, to=100, number_of_steps=16,
+        self._slider = ctk.CTkSlider(scroll, from_=20, to=100, number_of_steps=16,
                                       width=260, height=18,
                                       fg_color="#374151", progress_color="#3B82F6",
                                       button_color="#60A5FA", button_hover_color="#93C5FD",
                                       command=self._on_slider)
         self._slider.set(self._alpha_val * 100)
-        self._slider.pack(padx=16, pady=(0, 10))
+        self._slider.pack(padx=12, pady=(0, 6))
 
-        ctk.CTkFrame(outer, height=1, fg_color="#2D2D44").pack(fill="x", padx=16, pady=2)
+        ctk.CTkFrame(scroll, height=1, fg_color="#2D2D44").pack(fill="x", padx=12, pady=2)
 
-        # Close to tray toggle
-        tray_frame = ctk.CTkFrame(outer, fg_color="transparent")
-        tray_frame.pack(fill="x", padx=16, pady=(8, 4))
+        # ──── 关闭到托盘 ────
+        tray_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        tray_frame.pack(fill="x", padx=12, pady=(6, 4))
         ctk.CTkLabel(tray_frame, text="\u5173\u95ed\u65f6\u6700\u5c0f\u5316\u5230\u6258\u76d8",
                      font=ctk.CTkFont(size=13), text_color="#9CA3AF").pack(side="left")
         self._tray_switch = ctk.CTkSwitch(tray_frame, text="", width=44, height=22,
@@ -195,11 +190,11 @@ class SettingsDialog(ctk.CTkToplevel):
             self._tray_switch.select()
         self._tray_switch.pack(side="right")
 
-        ctk.CTkFrame(outer, height=1, fg_color="#2D2D44").pack(fill="x", padx=16, pady=2)
+        ctk.CTkFrame(scroll, height=1, fg_color="#2D2D44").pack(fill="x", padx=12, pady=2)
 
-        # Auto-start toggle
-        auto_frame = ctk.CTkFrame(outer, fg_color="transparent")
-        auto_frame.pack(fill="x", padx=16, pady=(8, 4))
+        # ──── 开机自启 ────
+        auto_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        auto_frame.pack(fill="x", padx=12, pady=(6, 4))
         ctk.CTkLabel(auto_frame, text="\u5f00\u673a\u81ea\u542f\u52a8",
                      font=ctk.CTkFont(size=13), text_color="#9CA3AF").pack(side="left")
         self._auto_switch = ctk.CTkSwitch(auto_frame, text="", width=44, height=22,
@@ -208,6 +203,70 @@ class SettingsDialog(ctk.CTkToplevel):
         if self._autostart:
             self._auto_switch.select()
         self._auto_switch.pack(side="right")
+
+        # ──── 云端同步 分割线+标题 ────
+        ctk.CTkFrame(scroll, height=2, fg_color="#3B82F6").pack(fill="x", padx=12, pady=(10, 4))
+        ctk.CTkLabel(scroll, text="\u2601\ufe0f \u4e91\u7aef\u540c\u6b65",
+                     font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color="#E5E7EB", anchor="w").pack(fill="x", padx=12, pady=(2, 4))
+
+        # 同步开关
+        sync_toggle_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        sync_toggle_frame.pack(fill="x", padx=12, pady=(2, 4))
+        ctk.CTkLabel(sync_toggle_frame, text="\u542f\u7528\u540c\u6b65",
+                     font=ctk.CTkFont(size=13), text_color="#9CA3AF").pack(side="left")
+        self._sync_switch = ctk.CTkSwitch(sync_toggle_frame, text="", width=44, height=22,
+                                           fg_color="#374151", progress_color="#10B981",
+                                           command=self._on_sync_toggle)
+        if get_config("sync_enabled", False):
+            self._sync_switch.select()
+        self._sync_switch.pack(side="right")
+
+        # 服务器地址
+        ctk.CTkLabel(scroll, text="\u670d\u52a1\u5668\u5730\u5740",
+                     font=ctk.CTkFont(size=12), text_color="#6B7280",
+                     anchor="w").pack(fill="x", padx=12, pady=(4, 0))
+        self._url_entry = ctk.CTkEntry(scroll, font=ctk.CTkFont(size=12), height=30,
+                                        fg_color="#16162A", border_color="#374151",
+                                        text_color="#E5E7EB",
+                                        placeholder_text="http://\u670d\u52a1\u5668IP:5000")
+        self._url_entry.pack(fill="x", padx=12, pady=(2, 4))
+        saved_url = get_config("sync_server_url", "")
+        if saved_url:
+            self._url_entry.insert(0, saved_url)
+
+        # API 密钥
+        ctk.CTkLabel(scroll, text="API \u5bc6\u94a5",
+                     font=ctk.CTkFont(size=12), text_color="#6B7280",
+                     anchor="w").pack(fill="x", padx=12, pady=(4, 0))
+        self._key_entry = ctk.CTkEntry(scroll, font=ctk.CTkFont(size=12), height=30,
+                                        fg_color="#16162A", border_color="#374151",
+                                        text_color="#E5E7EB", show="\u2022",
+                                        placeholder_text="\u4e0e\u670d\u52a1\u5668\u7aef\u4e00\u81f4")
+        self._key_entry.pack(fill="x", padx=12, pady=(2, 4))
+        saved_key = get_config("sync_api_key", "")
+        if saved_key:
+            self._key_entry.insert(0, saved_key)
+
+        # 保存 + 立即同步 按钮
+        btn_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=12, pady=(6, 2))
+        ctk.CTkButton(btn_frame, text="\U0001f4be \u4fdd\u5b58\u914d\u7f6e", width=120, height=30,
+                       font=ctk.CTkFont(size=12),
+                       fg_color="#374151", hover_color="#4B5563",
+                       corner_radius=6,
+                       command=self._save_sync_config).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(btn_frame, text="\u2601\ufe0f \u7acb\u5373\u540c\u6b65", width=120, height=30,
+                       font=ctk.CTkFont(size=12),
+                       fg_color="#3B82F6", hover_color="#2563EB",
+                       corner_radius=6,
+                       command=self._do_sync).pack(side="right")
+
+        # 同步状态
+        self._sync_status = ctk.CTkLabel(scroll, text="",
+                                          font=ctk.CTkFont(size=11),
+                                          text_color="#6B7280", anchor="w")
+        self._sync_status.pack(fill="x", padx=12, pady=(2, 6))
 
     def _on_slider(self, value):
         alpha = value / 100.0
@@ -225,3 +284,36 @@ class SettingsDialog(ctk.CTkToplevel):
     def _on_autostart_toggle(self):
         enabled = bool(self._auto_switch.get())
         set_autostart(enabled)
+
+    def _on_sync_toggle(self):
+        enabled = bool(self._sync_switch.get())
+        set_config("sync_enabled", enabled)
+
+    def _save_sync_config(self):
+        url = self._url_entry.get().strip()
+        key = self._key_entry.get().strip()
+        if url:
+            set_config("sync_server_url", url)
+        if key:
+            set_config("sync_api_key", key)
+        set_config("sync_enabled", bool(self._sync_switch.get()))
+        self._sync_status.configure(text="\u2705 \u914d\u7f6e\u5df2\u4fdd\u5b58", text_color="#22C55E")
+
+    def _do_sync(self):
+        self._sync_status.configure(text="\u2601\ufe0f \u6b63\u5728\u540c\u6b65...", text_color="#60A5FA")
+        self._save_sync_config()
+
+        def on_done(success, message):
+            try:
+                if self.winfo_exists():
+                    color = "#22C55E" if success else "#EF4444"
+                    icon = "\u2705" if success else "\u274c"
+                    self._sync_status.configure(text=f"{icon} {message}", text_color=color)
+            except Exception:
+                pass
+
+        try:
+            from sync_client import sync_from_cloud
+            sync_from_cloud(callback=lambda ok, msg: self.after(0, lambda: on_done(ok, msg)))
+        except Exception as e:
+            self._sync_status.configure(text=f"\u274c {e}", text_color="#EF4444")

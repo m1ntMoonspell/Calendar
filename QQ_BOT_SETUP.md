@@ -148,55 +148,71 @@ server {
 
 ---
 
-## 第三步：配置并启动 QQ 机器人
+## 第三步：在服务器上部署 QQ 机器人
 
-### 3.1 安装机器人依赖
+> ⚠️ QQ 机器人应部署在云服务器上（和同步服务器一起），这样 24 小时在线，不需要你的电脑一直开着。
+
+### 3.1 上传机器人代码到服务器
+
+和上传 `server/` 目录一样，通过宝塔面板将 `bot/` 文件夹上传到服务器 `/root/` 目录下。
+
+### 3.2 在服务器上安装依赖
 
 ```bash
-cd bot/
-pip install -r requirements.txt
+cd ~/bot
+pip3 install -r requirements.txt
 ```
 
-### 3.2 创建配置文件
+> 如果 `pip3 install qq-botpy` 失败（国内网络问题），可使用镜像源：
+> ```bash
+> pip3 install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+> ```
+
+### 3.3 创建配置文件
 
 ```bash
+cd ~/bot
 cp config.example.yaml config.yaml
 ```
 
-编辑 `bot/config.yaml`:
+编辑 `config.yaml`（可通过宝塔面板的文件管理器编辑）：
 
 ```yaml
 # 第一步获取的 AppID 和 AppSecret
 appid: "你的AppID"
 secret: "你的AppSecret"
 
-# 第二步部署的服务器地址
-sync_server_url: "http://你的服务器IP:5000"
+# 同步服务器在本机，直接用 127.0.0.1
+sync_server_url: "http://127.0.0.1:5000"
 
-# 与服务器 SYNC_API_KEY 一致
+# 与 sync_server 的 SYNC_API_KEY 一致
 sync_api_key: "your-very-secure-random-key-here"
 ```
 
-### 3.3 启动机器人
+### 3.3 后台启动机器人
 
 ```bash
-cd bot/
-python qq_bot.py
+cd ~/bot
+nohup python3 qq_bot.py > bot.log 2>&1 &
 ```
 
-看到 `🤖 桌面助手 QQ 机器人已上线!` 表示启动成功。
+查看是否启动成功：
+
+```bash
+tail -f bot.log
+```
+
+看到 `🤖 桌面助手 QQ 机器人已上线!` 表示成功，按 `Ctrl+C` 退出日志查看。
 
 ### 3.4 测试机器人
 
-在手机 QQ 上找到你的机器人，发送以下消息测试：
+在手机 QQ 上找到你的机器人，发送：
 
 ```
 /帮助
 ```
 
-你应该收到指令列表回复。
-
-然后尝试添加计划：
+收到指令列表后，试一下：
 
 ```
 /添加计划 今天 去超市买菜
@@ -207,31 +223,20 @@ python qq_bot.py
 
 ## 第四步：配置桌面日历同步
 
-### 4.1 编辑日历配置
+### 4.1 在日历设置中配置（推荐）
 
-打开日历软件目录下的 `.config.json`（如果不存在会自动创建），添加：
+1. 启动日历软件 `python main.py`
+2. 点击标题栏的 **⚙ 设置** 按钮
+3. 滚动到底部 **☁️ 云端同步** 区域
+4. 开启 **启用同步** 开关
+5. 填入 **服务器地址**: `http://你的服务器公网IP:5000`
+6. 填入 **API 密钥**: 与服务器端 `SYNC_API_KEY` 一致
+7. 点击 **💾 保存配置**
+8. 点击 **☁️ 立即同步** 验证连接
 
-```json
-{
-  "sync_enabled": true,
-  "sync_server_url": "http://你的服务器IP:5000",
-  "sync_api_key": "your-very-secure-random-key-here"
-}
-```
+### 4.2 验证同步
 
-### 4.2 启动日历
-
-```bash
-python main.py
-```
-
-日历启动时会自动从云端拉取数据并合并到本地。你在手机 QQ 上添加的计划，会在日历启动时出现在对应日期上。
-
-### 4.3 手动同步测试
-
-```bash
-python sync_client.py
-```
+在手机 QQ 上通过机器人添加一条计划，然后在日历设置中点击 **☁️ 立即同步**，计划就会出现在日历上。每次启动日历也会自动同步。
 
 ---
 
