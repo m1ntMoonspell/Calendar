@@ -163,6 +163,27 @@ def get_all_files():
     return [dict(r) for r in rows]
 
 
+def delete_file_record(file_id):
+    """删除文件记录"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM saved_files WHERE id = ?", (file_id,))
+    conn.commit()
+    conn.close()
+
+
+def rename_file_record(file_id, new_name, new_path):
+    """重命名文件记录"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE saved_files SET original_name = ?, saved_path = ? WHERE id = ?",
+        (new_name, new_path, file_id)
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_dates_with_plans():
     """获取所有有计划的日期集合"""
     conn = get_connection()

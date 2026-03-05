@@ -35,6 +35,28 @@ class PlanViewDialog(ctk.CTkToplevel):
         y = parent.winfo_rooty() + (parent.winfo_height() - 600) // 2
         self.geometry(f"+{max(0,x)}+{max(0,y)}")
 
+    def destroy(self):
+        self._cleanup_on_close()
+        super().destroy()
+
+    def _cleanup_on_close(self):
+        """关闭前清理：删除已清空内容的计划，自动保存修改"""
+        changed = False
+        for info in self._entries:
+            try:
+                content = info['entry'].get().strip()
+            except Exception:
+                continue
+            if info['plan_id'] is not None:
+                if not content:
+                    database.delete_plan(info['plan_id'])
+                    changed = True
+                elif content != info['original']:
+                    database.update_plan(info['plan_id'], content)
+                    changed = True
+        if changed:
+            self._notify_change()
+
     def _build_ui(self):
         main_card = ctk.CTkFrame(self, corner_radius=16, fg_color="#1E1E2E",
                                   border_width=1, border_color="#2D2D44")
@@ -109,15 +131,31 @@ class PlanViewDialog(ctk.CTkToplevel):
                     '\u538b\u7f29\u5305': '\U0001f4e6', '\u4ee3\u7801': '\U0001f4bb',
                     '\u5176\u4ed6': '\U0001f4ce'
                 }.get(f['file_type'], '\U0001f4ce')
-                ctk.CTkLabel(row, text=f"  {type_emoji} {f['original_name']}",
+                name_lbl = ctk.CTkLabel(row, text=f"  {type_emoji} {f['original_name']}",
                              font=ctk.CTkFont(size=12), text_color="#D1D5DB",
-                             anchor="w").pack(side="left", fill="x", expand=True)
+                             anchor="w")
+                name_lbl.pack(side="left", fill="x", expand=True)
+                ctk.CTkButton(row, text="\U0001f5d1", width=28, height=22,
+                               font=ctk.CTkFont(size=11),
+                               fg_color="#7F1D1D", hover_color="#EF4444",
+                               text_color="#FCA5A5", corner_radius=6,
+                               command=lambda fid=f['id'], fp=f['saved_path'],
+                                      r=row: self._delete_file(fid, fp, r)
+                               ).pack(side="right", padx=2)
+                ctk.CTkButton(row, text="\u91cd\u547d\u540d", width=50, height=22,
+                               font=ctk.CTkFont(size=10),
+                               fg_color="#374151", hover_color="#4B5563",
+                               corner_radius=6,
+                               command=lambda fid=f['id'], fp=f['saved_path'],
+                                      nl=name_lbl, te=type_emoji:
+                                      self._rename_file(fid, fp, nl, te)
+                               ).pack(side="right", padx=2)
                 ctk.CTkButton(row, text="\u6253\u5f00", width=45, height=22,
                                font=ctk.CTkFont(size=10),
                                fg_color="#3B82F6", hover_color="#2563EB",
                                corner_radius=6,
                                command=lambda p=f['saved_path']: self._open_file(p)
-                               ).pack(side="right", padx=5)
+                               ).pack(side="right", padx=2)
         else:
             ctk.CTkLabel(content, text="\u6682\u65e0\u6587\u4ef6",
                          font=ctk.CTkFont(size=12), text_color="#4B5563").pack(pady=6)
@@ -267,6 +305,82 @@ class PlanViewDialog(ctk.CTkToplevel):
                 import subprocess
                 subprocess.Popen(['xdg-open', path], stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
+
+    def _delete_file(self, file_id, file_path, row_widget):
+        """删除文件记录和物理文件"""
+        import os
+        database.delete_file_record(file_id)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception:
+            pass
+        row_widget.destroy()
+        self._notify_change()
+
+    def _rename_file(self, file_id, file_path, name_label, type_emoji):
+        """弹出重命名对话框"""
+        import os
+        old_name = os.path.basename(file_path)
+        name_only = os.path.splitext(old_name)[0]
+
+        dlg = ctk.CTkToplevel(self)
+        dlg.overrideredirect(True)
+        dlg.attributes('-topmost', True)
+        dlg.configure(fg_color="#1E1E2E")
+        dlg.geometry("360x150")
+
+        dlg.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - 360) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - 150) // 2
+        dlg.geometry(f"+{max(0,x)}+{max(0,y)}")
+
+        frame = ctk.CTkFrame(dlg, fg_color="#1E1E2E", corner_radius=14,
+                             border_width=1, border_color="#374151")
+        frame.pack(fill="both", expand=True, padx=2, pady=2)
+
+        ctk.CTkLabel(frame, text="\u8f93\u5165\u65b0\u6587\u4ef6\u540d:",
+                     font=ctk.CTkFont(size=13),
+                     text_color="#E5E7EB").pack(padx=16, pady=(12, 4))
+
+        entry = ctk.CTkEntry(frame, font=ctk.CTkFont(size=12), height=32,
+                             fg_color="#16162A", border_color="#374151",
+                             text_color="#E5E7EB")
+        entry.pack(fill="x", padx=16, pady=4)
+        entry.insert(0, old_name)
+        entry.select_range(0, len(name_only))
+        entry.focus_set()
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=16, pady=(4, 12))
+
+        def do_rename():
+            new_name = entry.get().strip()
+            if not new_name or new_name == old_name:
+                dlg.destroy()
+                return
+            new_path = os.path.join(os.path.dirname(file_path), new_name)
+            try:
+                if os.path.exists(file_path):
+                    os.rename(file_path, new_path)
+                database.rename_file_record(file_id, new_name, new_path)
+                name_label.configure(text=f"  {type_emoji} {new_name}")
+                self._notify_change()
+            except Exception as e:
+                print(f"Rename error: {e}")
+            dlg.destroy()
+
+        entry.bind('<Return>', lambda e: do_rename())
+        entry.bind('<Escape>', lambda e: dlg.destroy())
+
+        ctk.CTkButton(btn_frame, text="\u53d6\u6d88", width=60, height=28,
+                       fg_color="#374151", hover_color="#4B5563",
+                       font=ctk.CTkFont(size=12), corner_radius=6,
+                       command=dlg.destroy).pack(side="right", padx=4)
+        ctk.CTkButton(btn_frame, text="\u786e\u5b9a", width=60, height=28,
+                       fg_color="#3B82F6", hover_color="#2563EB",
+                       font=ctk.CTkFont(size=12), corner_radius=6,
+                       command=do_rename).pack(side="right")
 
 
 import sys
