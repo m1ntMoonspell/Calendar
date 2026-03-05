@@ -41,72 +41,66 @@ class MiniCalendarPopup(ctk.CTkToplevel):
     HEADER_HEIGHT = 42
     WEEKDAY_HEIGHT = 28
 
-    def __init__(self, parent, anchor_widget=None, on_change=None):
+    def __init__(self, parent, anchor_widget=None, on_change=None, on_destroy=None):
         super().__init__(parent)
         self.parent_window = parent
         self.anchor_widget = anchor_widget or parent
         self.on_change = on_change
+        self.on_destroy_cb = on_destroy
 
         self.overrideredirect(True)
         self.attributes('-topmost', True)
 
-        # 状态
         today = date.today()
         self.current_year = today.year
         self.current_month = today.month
         self.selected_date = None
         self.hover_date = None
 
-        # 计算尺寸 
         self._width = self.CELL_SIZE * 7 + 20
         self._height = self.HEADER_HEIGHT + self.WEEKDAY_HEIGHT + self.CELL_SIZE * 6 + 30
 
-        # 获取标注数据
         self.plan_dates = database.get_dates_with_plans()
         self.file_dates = database.get_dates_with_files()
 
         self._build_ui()
-        self.reposition()
 
-        # 点击窗口外关闭
-        self.bind('<FocusOut>', lambda e: self._schedule_close())
+        # 延迟定位，确保窗口已经完全创建
+        self.after(50, self.reposition)
 
-    def _schedule_close(self):
-        self.after(200, self._check_close)
-
-    def _check_close(self):
-        try:
-            if not self.focus_get():
-                self.destroy()
-        except Exception:
-            pass
+    def destroy(self):
+        if self.on_destroy_cb:
+            try:
+                self.on_destroy_cb()
+            except Exception:
+                pass
+        super().destroy()
 
     def reposition(self):
         """重新定位 - 在锚点组件上方弹出"""
-        self.update_idletasks()
-        aw = self.anchor_widget
-        ax = aw.winfo_rootx()
-        ay = aw.winfo_rooty()
+        try:
+            self.update_idletasks()
+            aw = self.anchor_widget
+            ax = aw.winfo_rootx()
+            ay = aw.winfo_rooty()
 
-        # 向上弹出：日历底部对齐到锚点组件的顶部
-        x = ax + (aw.winfo_width() - self._width) // 2
-        y = ay - self._height - 5
+            x = ax + (aw.winfo_width() - self._width) // 2
+            y = ay - self._height - 5
 
-        # 确保不超出屏幕顶部
-        if y < 0:
-            # 如果上方空间不够，改为向下弹出
-            y = ay + aw.winfo_height() + 5
+            if y < 0:
+                y = ay + aw.winfo_height() + 5
 
-        # 确保不超出屏幕左右
-        screen_w = self.winfo_screenwidth()
-        x = max(0, min(x, screen_w - self._width))
+            screen_w = self.winfo_screenwidth()
+            x = max(0, min(x, screen_w - self._width))
 
-        self.geometry(f"{self._width}x{self._height}+{x}+{y}")
+            self.geometry(f"{self._width}x{self._height}+{x}+{y}")
+        except Exception:
+            pass
 
     def _build_ui(self):
-        self.configure(fg_color="transparent")
+        # 设置 CTkToplevel 背景为实际颜色，不要用 "transparent"
+        self.configure(fg_color=self.COLORS['bg'])
 
-        # 圆角外框 — 用 CTkFrame 承载所有内容，Canvas 内嵌其中保证四角圆角
         self.main_frame = ctk.CTkFrame(
             self,
             fg_color=self.COLORS['bg'],
@@ -116,11 +110,9 @@ class MiniCalendarPopup(ctk.CTkToplevel):
         )
         self.main_frame.pack(fill="both", expand=True, padx=0, pady=0)
 
-        # 内部容器（保证 Canvas 不溢出圆角区域）
         inner = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         inner.pack(fill="both", expand=True, padx=10, pady=6)
 
-        # 顶部导航
         nav_frame = ctk.CTkFrame(inner, fg_color="transparent", height=self.HEADER_HEIGHT)
         nav_frame.pack(fill="x", pady=(2, 0))
         nav_frame.pack_propagate(False)
@@ -129,8 +121,7 @@ class MiniCalendarPopup(ctk.CTkToplevel):
             nav_frame, text="\u25c0", width=32, height=28,
             fg_color="transparent", hover_color="#374151",
             text_color=self.COLORS['nav_fg'],
-            font=ctk.CTkFont(size=14),
-            corner_radius=6,
+            font=ctk.CTkFont(size=14), corner_radius=6,
             command=self._prev_month
         )
         prev_btn.pack(side="left")
@@ -146,13 +137,11 @@ class MiniCalendarPopup(ctk.CTkToplevel):
             nav_frame, text="\u25b6", width=32, height=28,
             fg_color="transparent", hover_color="#374151",
             text_color=self.COLORS['nav_fg'],
-            font=ctk.CTkFont(size=14),
-            corner_radius=6,
+            font=ctk.CTkFont(size=14), corner_radius=6,
             command=self._next_month
         )
         next_btn.pack(side="right")
 
-        # Canvas 日历主体
         canvas_width = self.CELL_SIZE * 7
         canvas_height = self.WEEKDAY_HEIGHT + self.CELL_SIZE * 6 + 10
         self.canvas = tk.Canvas(
@@ -165,7 +154,6 @@ class MiniCalendarPopup(ctk.CTkToplevel):
         )
         self.canvas.pack(pady=(0, 2))
 
-        # Canvas 事件绑定
         self.canvas.bind('<Button-1>', self._on_click)
         self.canvas.bind('<Double-Button-1>', self._on_double_click)
         self.canvas.bind('<Motion>', self._on_motion)
@@ -175,9 +163,9 @@ class MiniCalendarPopup(ctk.CTkToplevel):
 
     def _draw_calendar(self):
         self.canvas.delete("all")
-        self.month_label.configure(text=f"{self.current_year}年 {self.current_month}月")
+        self.month_label.configure(text=f"{self.current_year}\u5e74 {self.current_month}\u6708")
 
-        weekdays = ['一', '二', '三', '四', '五', '六', '日']
+        weekdays = ['\u4e00', '\u4e8c', '\u4e09', '\u56db', '\u4e94', '\u516d', '\u65e5']
         for i, wd in enumerate(weekdays):
             x = i * self.CELL_SIZE + self.CELL_SIZE // 2
             y = self.WEEKDAY_HEIGHT // 2
@@ -212,58 +200,47 @@ class MiniCalendarPopup(ctk.CTkToplevel):
 
                 r = self.CELL_SIZE // 2 - 4
 
-                # 背景
                 if is_today:
                     self.canvas.create_oval(
                         cx - r, cy - r, cx + r, cy + r,
-                        fill=self.COLORS['today_bg'], outline='',
-                        tags="cell_bg"
+                        fill=self.COLORS['today_bg'], outline='', tags="cell_bg"
                     )
                 elif is_hover:
                     self.canvas.create_oval(
                         cx - r, cy - r, cx + r, cy + r,
-                        fill=self.COLORS['hover_bg'], outline='',
-                        tags="cell_bg"
+                        fill=self.COLORS['hover_bg'], outline='', tags="cell_bg"
                     )
 
-                # 选中虚线框
                 if is_selected:
                     self.canvas.create_oval(
                         cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1,
                         outline=self.COLORS['selected_border'],
-                        width=2, dash=(4, 3),
-                        tags="cell_select"
+                        width=2, dash=(4, 3), tags="cell_select"
                     )
 
-                # 日期文字
                 text_color = self.COLORS['today_fg'] if is_today else (
                     self.COLORS['weekend_fg'] if col_idx >= 5 else self.COLORS['normal_fg']
                 )
                 self.canvas.create_text(
                     cx, cy - 2, text=str(day),
                     font=("Microsoft YaHei", 12, "bold" if is_today else "normal"),
-                    fill=text_color,
-                    tags="cell_text"
+                    fill=text_color, tags="cell_text"
                 )
 
-                # 绿点（有计划）
                 dot_y = cy + r - 5
                 if has_plan:
                     self.canvas.create_oval(
                         cx - self.DOT_RADIUS, dot_y - self.DOT_RADIUS,
                         cx + self.DOT_RADIUS, dot_y + self.DOT_RADIUS,
-                        fill=self.COLORS['plan_dot'], outline='',
-                        tags="dot"
+                        fill=self.COLORS['plan_dot'], outline='', tags="dot"
                     )
                     dot_y += self.DOT_RADIUS * 2 + 2
 
-                # 红点（有文件）
                 if has_file:
                     self.canvas.create_oval(
                         cx - self.DOT_RADIUS, dot_y - self.DOT_RADIUS,
                         cx + self.DOT_RADIUS, dot_y + self.DOT_RADIUS,
-                        fill=self.COLORS['file_dot'], outline='',
-                        tags="dot"
+                        fill=self.COLORS['file_dot'], outline='', tags="dot"
                     )
 
     def _get_date_at(self, event):

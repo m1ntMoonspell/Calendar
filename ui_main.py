@@ -1,16 +1,15 @@
 """
 主台历界面
 iOS 风格无边框台历卡片
-- 锁定按钮：鼠标穿透
-- 设置按钮：打开设置面板（透明度、开机自启）
-- 关闭按钮：最小化到托盘
+- 锁定按钮：置顶 + 位置锁定 + 背景全透明（内容正常显示）
+- 设置按钮：打开设置面板（透明度、关闭最小化到托盘、开机自启）
+- 关闭按钮：根据设置 最小化到托盘 / 退出
 - 窗口缩放时内容自适应
 """
 
 import os
 import sys
 import re
-import ctypes
 import tkinter as tk
 import customtkinter as ctk
 from datetime import datetime, date
@@ -19,11 +18,20 @@ import holidays as holiday_module
 import database
 import file_manager
 from ui_calendar import MiniCalendarPopup
-from ui_settings import SettingsDialog
+from ui_settings import SettingsDialog, get_config, set_config
 
-WEEKDAY_NAMES = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
+WEEKDAY_NAMES = ['\u661f\u671f\u4e00', '\u661f\u671f\u4e8c', '\u661f\u671f\u4e09',
+                 '\u661f\u671f\u56db', '\u661f\u671f\u4e94', '\u661f\u671f\u516d', '\u661f\u671f\u65e5']
 
 BASE_W, BASE_H = 360, 460
+
+# 用于 Windows -transparentcolor 的颜色键
+TRANSPARENT_KEY = '#010101'
+
+# 正常模式的背景色
+NORMAL_BG = '#1E1E2E'
+TITLEBAR_BG = '#16162A'
+BORDER_COLOR = '#2D2D44'
 
 
 class MainApp(ctk.CTk):
@@ -43,10 +51,8 @@ class MainApp(ctk.CTk):
         self.calendar_popup = None
         self.drop_enabled = False
         self._locked = False
-        self._passthrough = False
         self._drag_start_x = 0
         self._drag_start_y = 0
-        self._resizing = False
         self._resize_start_x = 0
         self._resize_start_y = 0
         self._resize_start_w = 0
@@ -54,8 +60,8 @@ class MainApp(ctk.CTk):
         self._min_w = 280
         self._min_h = 360
         self._settings_popup = None
+        self._close_to_tray = get_config("close_to_tray", False)
 
-        # Tray manager (set by main.py)
         self.tray = None
 
         self._build_ui()
@@ -70,8 +76,6 @@ class MainApp(ctk.CTk):
         self.geometry(f"+{(sw-w)//2}+{(sh-h)//2}")
 
         self.bind('<Configure>', self._on_configure)
-
-        # Set icon
         self._set_icon()
 
     def _set_icon(self):
@@ -86,50 +90,46 @@ class MainApp(ctk.CTk):
                 pass
 
     def _build_ui(self):
-        self.main_card = ctk.CTkFrame(self, corner_radius=16, fg_color="#1E1E2E",
-                                       border_width=1, border_color="#2D2D44")
+        self.main_card = ctk.CTkFrame(self, corner_radius=16, fg_color=NORMAL_BG,
+                                       border_width=1, border_color=BORDER_COLOR)
         self.main_card.pack(fill="both", expand=True, padx=0, pady=0)
 
         # ============ 标题栏 ============
-        self.titlebar = ctk.CTkFrame(self.main_card, height=36, fg_color="#16162A",
+        self.titlebar = ctk.CTkFrame(self.main_card, height=36, fg_color=TITLEBAR_BG,
                                       corner_radius=0)
         self.titlebar.pack(fill="x", padx=1, pady=(1, 0))
         self.titlebar.pack_propagate(False)
 
         ctk.CTkFrame(self.titlebar, width=16, fg_color="transparent").pack(side="left")
 
-        self.title_lbl = ctk.CTkLabel(self.titlebar, text="\U0001f4c5 桌面助手",
+        self.title_lbl = ctk.CTkLabel(self.titlebar, text="\U0001f4c5 \u684c\u9762\u52a9\u624b",
                                        font=ctk.CTkFont(family="Microsoft YaHei", size=12),
                                        text_color="#9CA3AF")
         self.title_lbl.pack(side="left", padx=2)
 
-        # Close → tray
-        close_btn = ctk.CTkButton(self.titlebar, text="\u2715", width=30, height=26,
-                                   fg_color="transparent", hover_color="#EF4444",
-                                   text_color="#9CA3AF", font=ctk.CTkFont(size=14),
-                                   corner_radius=6, command=self._close_to_tray)
-        close_btn.pack(side="right", padx=(0, 4))
+        # Close button
+        self._close_btn = ctk.CTkButton(
+            self.titlebar, text="\u2715", width=30, height=26,
+            fg_color="transparent", hover_color="#EF4444",
+            text_color="#9CA3AF", font=ctk.CTkFont(size=14),
+            corner_radius=6, command=self._on_close)
+        self._close_btn.pack(side="right", padx=(0, 4))
 
-        # Lock / passthrough
-        self._lock_btn = ctk.CTkButton(self.titlebar, text="\U0001f513", width=30, height=26,
-                                        fg_color="transparent", hover_color="#374151",
-                                        text_color="#9CA3AF", font=ctk.CTkFont(size=13),
-                                        corner_radius=6, command=self._toggle_lock)
+        # Lock button (includes topmost)
+        self._lock_btn = ctk.CTkButton(
+            self.titlebar, text="\U0001f513", width=30, height=26,
+            fg_color="transparent", hover_color="#374151",
+            text_color="#9CA3AF", font=ctk.CTkFont(size=13),
+            corner_radius=6, command=self._toggle_lock)
         self._lock_btn.pack(side="right", padx=1)
 
-        # Pin
-        self._pin_btn = ctk.CTkButton(self.titlebar, text="\U0001f4cc", width=30, height=26,
-                                       fg_color="transparent", hover_color="#374151",
-                                       text_color="#6B7280", font=ctk.CTkFont(size=13),
-                                       corner_radius=6, command=self._toggle_topmost)
-        self._pin_btn.pack(side="right", padx=1)
-
-        # Settings
-        settings_btn = ctk.CTkButton(self.titlebar, text="\u2699", width=30, height=26,
-                                      fg_color="transparent", hover_color="#374151",
-                                      text_color="#9CA3AF", font=ctk.CTkFont(size=14),
-                                      corner_radius=6, command=self._open_settings)
-        settings_btn.pack(side="right", padx=1)
+        # Settings button
+        self._settings_btn = ctk.CTkButton(
+            self.titlebar, text="\u2699", width=30, height=26,
+            fg_color="transparent", hover_color="#374151",
+            text_color="#9CA3AF", font=ctk.CTkFont(size=14),
+            corner_radius=6, command=self._open_settings)
+        self._settings_btn.pack(side="right", padx=1)
 
         self.titlebar.bind('<Button-1>', self._start_drag)
         self.titlebar.bind('<B1-Motion>', self._do_drag)
@@ -146,62 +146,66 @@ class MainApp(ctk.CTk):
         today = date.today()
         weekday = WEEKDAY_NAMES[today.weekday()]
 
-        self.date_label = ctk.CTkLabel(self.content,
-                                        text=f"{today.year}年{today.month}月{today.day}日 {weekday}",
-                                        font=ctk.CTkFont(family="Microsoft YaHei", size=15, weight="bold"),
-                                        text_color="#E5E7EB")
+        self.date_label = ctk.CTkLabel(
+            self.content,
+            text=f"{today.year}\u5e74{today.month}\u6708{today.day}\u65e5 {weekday}",
+            font=ctk.CTkFont(family="Microsoft YaHei", size=15, weight="bold"),
+            text_color="#E5E7EB")
         self.date_label.pack(pady=(2, 0))
 
-        self.holiday_name_label = ctk.CTkLabel(self.content, text="正在获取节假日信息...",
-                                                font=ctk.CTkFont(family="Microsoft YaHei", size=13),
-                                                text_color="#9CA3AF")
+        self.holiday_name_label = ctk.CTkLabel(
+            self.content, text="\u6b63\u5728\u83b7\u53d6\u8282\u5047\u65e5\u4fe1\u606f...",
+            font=ctk.CTkFont(family="Microsoft YaHei", size=13), text_color="#9CA3AF")
         self.holiday_name_label.pack(pady=(4, 0))
 
-        self.days_label = ctk.CTkLabel(self.content, text="--",
-                                        font=ctk.CTkFont(family="Microsoft YaHei", size=58, weight="bold"),
-                                        text_color="#EF4444")
+        self.days_label = ctk.CTkLabel(
+            self.content, text="--",
+            font=ctk.CTkFont(family="Microsoft YaHei", size=58, weight="bold"),
+            text_color="#EF4444")
         self.days_label.pack(pady=(0, 0))
 
-        self.days_unit_label = ctk.CTkLabel(self.content, text="天",
-                                             font=ctk.CTkFont(family="Microsoft YaHei", size=18, weight="bold"),
-                                             text_color="#EF4444")
+        self.days_unit_label = ctk.CTkLabel(
+            self.content, text="\u5929",
+            font=ctk.CTkFont(family="Microsoft YaHei", size=18, weight="bold"),
+            text_color="#EF4444")
         self.days_unit_label.pack(pady=(0, 0))
 
-        self.time_label = ctk.CTkLabel(self.content, text="--:--:--",
-                                        font=ctk.CTkFont(family="Consolas", size=22, weight="bold"),
-                                        text_color="#9CA3AF")
+        self.time_label = ctk.CTkLabel(
+            self.content, text="--:--:--",
+            font=ctk.CTkFont(family="Consolas", size=22, weight="bold"),
+            text_color="#9CA3AF")
         self.time_label.pack(pady=(0, 2))
 
-        self.days_off_label = ctk.CTkLabel(self.content, text="",
-                                            font=ctk.CTkFont(family="Microsoft YaHei", size=13),
-                                            text_color="#34D399")
+        self.days_off_label = ctk.CTkLabel(
+            self.content, text="",
+            font=ctk.CTkFont(family="Microsoft YaHei", size=13), text_color="#34D399")
         self.days_off_label.pack(pady=(0, 6))
 
-        ctk.CTkFrame(self.content, height=1, fg_color="#2D2D44").pack(fill="x", padx=10, pady=4)
+        self._sep_line = ctk.CTkFrame(self.content, height=1, fg_color=BORDER_COLOR)
+        self._sep_line.pack(fill="x", padx=10, pady=4)
 
-        today_str = f"\U0001f4c5 {today.month}月{today.day}日"
-        self.calendar_btn = ctk.CTkButton(self.content, text=today_str,
-                                           font=ctk.CTkFont(family="Microsoft YaHei", size=13),
-                                           fg_color="#2D2D44", hover_color="#374151",
-                                           text_color="#E5E7EB", corner_radius=10,
-                                           height=34, width=180,
-                                           command=self._toggle_calendar)
+        today_str = f"\U0001f4c5 {today.month}\u6708{today.day}\u65e5"
+        self.calendar_btn = ctk.CTkButton(
+            self.content, text=today_str,
+            font=ctk.CTkFont(family="Microsoft YaHei", size=13),
+            fg_color=BORDER_COLOR, hover_color="#374151",
+            text_color="#E5E7EB", corner_radius=10, height=34, width=180,
+            command=self._toggle_calendar)
         self.calendar_btn.pack(pady=6)
 
-        self.drop_feedback = ctk.CTkLabel(self.content, text="\U0001f4ce 拖拽文件到窗口即可保存",
-                                           font=ctk.CTkFont(family="Microsoft YaHei", size=10),
-                                           text_color="#4B5563")
+        self.drop_feedback = ctk.CTkLabel(
+            self.content, text="\U0001f4ce \u62d6\u62fd\u6587\u4ef6\u5230\u7a97\u53e3\u5373\u53ef\u4fdd\u5b58",
+            font=ctk.CTkFont(family="Microsoft YaHei", size=10), text_color="#4B5563")
         self.drop_feedback.pack(pady=(2, 0))
 
         # ============ 缩放手柄 ============
-        self._resize_handle = ctk.CTkLabel(self.main_card, text="\u27cb",
-                                            font=ctk.CTkFont(size=12), text_color="#4B5563",
-                                            width=18, height=18)
+        self._resize_handle = ctk.CTkLabel(
+            self.main_card, text="\u27cb",
+            font=ctk.CTkFont(size=12), text_color="#4B5563", width=18, height=18)
         self._resize_handle.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
         self._resize_handle.bind('<Button-1>', self._start_resize)
         self._resize_handle.bind('<B1-Motion>', self._do_resize)
 
-        # Store base font sizes for scaling
         self._font_map = [
             (self.date_label, "Microsoft YaHei", 15, "bold"),
             (self.holiday_name_label, "Microsoft YaHei", 13, ""),
@@ -213,7 +217,7 @@ class MainApp(ctk.CTk):
             (self.drop_feedback, "Microsoft YaHei", 10, ""),
         ]
 
-    # ======== 窗口控制 ========
+    # ======== 窗口拖拽/缩放 ========
 
     def _start_drag(self, event):
         if self._locked:
@@ -224,9 +228,7 @@ class MainApp(ctk.CTk):
     def _do_drag(self, event):
         if self._locked:
             return
-        x = event.x_root - self._drag_start_x
-        y = event.y_root - self._drag_start_y
-        self.geometry(f"+{x}+{y}")
+        self.geometry(f"+{event.x_root - self._drag_start_x}+{event.y_root - self._drag_start_y}")
 
     def _start_resize(self, event):
         if self._locked:
@@ -239,74 +241,60 @@ class MainApp(ctk.CTk):
     def _do_resize(self, event):
         if self._locked:
             return
-        dx = event.x_root - self._resize_start_x
-        dy = event.y_root - self._resize_start_y
-        new_w = max(self._min_w, self._resize_start_w + dx)
-        new_h = max(self._min_h, self._resize_start_h + dy)
+        new_w = max(self._min_w, self._resize_start_w + event.x_root - self._resize_start_x)
+        new_h = max(self._min_h, self._resize_start_h + event.y_root - self._resize_start_y)
         self.geometry(f"{new_w}x{new_h}")
+
+    # ======== 锁定（置顶 + 位置锁定 + 背景透明） ========
 
     def _toggle_lock(self):
         self._locked = not self._locked
         if self._locked:
             self._lock_btn.configure(text="\U0001f512", text_color="#EF4444")
-            self._set_passthrough(True)
+            self.attributes('-topmost', True)
+            self._apply_transparent_bg()
         else:
             self._lock_btn.configure(text="\U0001f513", text_color="#9CA3AF")
-            self._set_passthrough(False)
+            self.attributes('-topmost', False)
+            self._restore_bg()
 
-    def _set_passthrough(self, enabled):
-        self._passthrough = enabled
+    def _apply_transparent_bg(self):
+        """锁定模式：背景色变为透明键（Windows 下完全透明穿透），内容保持显示"""
         try:
-            if sys.platform == 'win32':
-                hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
-                GWL_EXSTYLE = -20
-                WS_EX_TRANSPARENT = 0x00000020
-                WS_EX_LAYERED = 0x00080000
-                style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-                if enabled:
-                    style |= WS_EX_TRANSPARENT | WS_EX_LAYERED
-                else:
-                    style &= ~WS_EX_TRANSPARENT
-                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
-            else:
-                # X11: set input shape to empty region for passthrough
-                wid = self.winfo_id()
-                if enabled:
-                    os.system(f'xdotool windowfocus --sync {wid} 2>/dev/null; '
-                              f'xprop -id {wid} -remove _NET_WM_OPAQUE_REGION 2>/dev/null')
-                    try:
-                        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
-                        xfixes = ctypes.cdll.LoadLibrary("libXfixes.so.3")
-                        display_ptr = x11.XOpenDisplay(None)
-                        if display_ptr:
-                            region = xfixes.XFixesCreateRegion(display_ptr, None, 0)
-                            xfixes.XFixesSetWindowShapeRegion(display_ptr, wid, 2, 0, 0, region)
-                            xfixes.XFixesDestroyRegion(display_ptr, region)
-                            x11.XFlush(display_ptr)
-                            x11.XCloseDisplay(display_ptr)
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
-                        xfixes = ctypes.cdll.LoadLibrary("libXfixes.so.3")
-                        display_ptr = x11.XOpenDisplay(None)
-                        if display_ptr:
-                            xfixes.XFixesSetWindowShapeRegion(display_ptr, wid, 2, 0, 0, 0)
-                            x11.XFlush(display_ptr)
-                            x11.XCloseDisplay(display_ptr)
-                    except Exception:
-                        pass
-        except Exception as e:
-            print(f"Passthrough error: {e}")
+            self.attributes('-transparentcolor', TRANSPARENT_KEY)
+        except Exception:
+            pass
 
-    def _toggle_topmost(self):
-        current = self.attributes('-topmost')
-        self.attributes('-topmost', not current)
-        if not current:
-            self._pin_btn.configure(text_color="#F59E0B")
-        else:
-            self._pin_btn.configure(text_color="#6B7280")
+        self.configure(bg=TRANSPARENT_KEY)
+        self.main_card.configure(fg_color=TRANSPARENT_KEY, border_width=0,
+                                  border_color=TRANSPARENT_KEY)
+        self.titlebar.configure(fg_color=TRANSPARENT_KEY)
+        self.content.configure(fg_color=TRANSPARENT_KEY)
+
+        self.deco_line.pack_forget()
+        self._sep_line.pack_forget()
+        self._resize_handle.place_forget()
+
+    def _restore_bg(self):
+        """解锁模式：恢复正常背景"""
+        try:
+            self.attributes('-transparentcolor', '')
+        except Exception:
+            pass
+
+        self.configure(bg=ctk.ThemeManager.theme["CTk"]["fg_color"][1])
+        self.main_card.configure(fg_color=NORMAL_BG, border_width=1, border_color=BORDER_COLOR)
+        self.titlebar.configure(fg_color=TITLEBAR_BG)
+        self.content.configure(fg_color="transparent")
+
+        # 恢复装饰元素的显示位置
+        self.deco_line.pack(fill="x", padx=15, pady=(0, 8),
+                            before=self.date_label)
+        self._sep_line.pack(fill="x", padx=10, pady=4,
+                            before=self.calendar_btn)
+        self._resize_handle.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
+
+    # ======== 设置 ========
 
     def _open_settings(self):
         if self._settings_popup and self._settings_popup.winfo_exists():
@@ -315,16 +303,24 @@ class MainApp(ctk.CTk):
             return
         self._settings_popup = SettingsDialog(
             self, current_alpha=self._alpha,
-            on_alpha_change=self._set_alpha)
+            on_alpha_change=self._set_alpha,
+            close_to_tray=self._close_to_tray,
+            on_close_to_tray_change=self._on_close_to_tray_change)
 
     def _set_alpha(self, alpha):
         self._alpha = max(0.2, min(1.0, alpha))
         self.attributes('-alpha', self._alpha)
 
-    def _close_to_tray(self):
-        self.withdraw()
-        if self.tray:
-            pass  # tray already running
+    def _on_close_to_tray_change(self, enabled):
+        self._close_to_tray = enabled
+
+    # ======== 关闭/托盘 ========
+
+    def _on_close(self):
+        if self._close_to_tray and self.tray:
+            self.withdraw()
+        else:
+            self.quit_app()
 
     def show_from_tray(self):
         self.deiconify()
@@ -336,12 +332,12 @@ class MainApp(ctk.CTk):
             self.tray.stop()
         self.destroy()
 
+    # ======== Configure ========
+
     def _on_configure(self, event):
         if self.calendar_popup and self.calendar_popup.winfo_exists():
             self.calendar_popup.reposition()
         self._apply_scaling()
-
-    # ======== 内容缩放 ========
 
     def _apply_scaling(self):
         w = self.winfo_width()
@@ -365,37 +361,51 @@ class MainApp(ctk.CTk):
         try:
             info = holiday_module.get_holiday_countdown()
             if info:
-                self.holiday_name_label.configure(text=f"距{info['name']}还有：")
+                self.holiday_name_label.configure(text=f"\u8ddd{info['name']}\u8fd8\u6709\uff1a")
                 self.days_label.configure(text=str(info['days']))
                 self.time_label.configure(
                     text=f"{info['hours']:02d}:{info['minutes']:02d}:{info['seconds']:02d}")
-                self.days_off_label.configure(text=f"\U0001f389 放假 {info['days_off']} 天")
+                self.days_off_label.configure(text=f"\U0001f389 \u653e\u5047 {info['days_off']} \u5929")
             else:
-                self.holiday_name_label.configure(text="暂无节假日信息")
+                self.holiday_name_label.configure(text="\u6682\u65e0\u8282\u5047\u65e5\u4fe1\u606f")
                 self.days_label.configure(text="--")
                 self.time_label.configure(text="--:--:--")
                 self.days_off_label.configure(text="")
         except Exception as e:
-            self.holiday_name_label.configure(text="获取节假日信息失败")
+            self.holiday_name_label.configure(text="\u83b7\u53d6\u8282\u5047\u65e5\u4fe1\u606f\u5931\u8d25")
             print(f"Holiday error: {e}")
 
         today = date.today()
         weekday = WEEKDAY_NAMES[today.weekday()]
-        self.date_label.configure(text=f"{today.year}年{today.month}月{today.day}日 {weekday}")
-        self.calendar_btn.configure(text=f"\U0001f4c5 {today.month}月{today.day}日")
-
+        self.date_label.configure(
+            text=f"{today.year}\u5e74{today.month}\u6708{today.day}\u65e5 {weekday}")
+        self.calendar_btn.configure(text=f"\U0001f4c5 {today.month}\u6708{today.day}\u65e5")
         self.after(1000, self._update_countdown)
 
     # ======== 日历 ========
 
     def _toggle_calendar(self):
-        if self.calendar_popup and self.calendar_popup.winfo_exists():
-            self.calendar_popup.destroy()
+        # 如果弹窗已经存在且有效，销毁它
+        if self.calendar_popup is not None:
+            try:
+                if self.calendar_popup.winfo_exists():
+                    self.calendar_popup.destroy()
+                    # on_destroy_cb 会清空 self.calendar_popup
+                    return
+            except Exception:
+                pass
             self.calendar_popup = None
-        else:
-            self.calendar_popup = MiniCalendarPopup(
-                self, anchor_widget=self.calendar_btn,
-                on_change=self._on_data_changed)
+            return
+
+        # 创建新的弹窗
+        self.calendar_popup = MiniCalendarPopup(
+            self,
+            anchor_widget=self.calendar_btn,
+            on_change=self._on_data_changed,
+            on_destroy=self._on_calendar_destroyed)
+
+    def _on_calendar_destroyed(self):
+        self.calendar_popup = None
 
     def _on_data_changed(self):
         if self.calendar_popup and self.calendar_popup.winfo_exists():
@@ -426,27 +436,24 @@ class MainApp(ctk.CTk):
                         tkdnd_path = candidate
                         break
                 if not tkdnd_path:
-                    raise FileNotFoundError("找不到 tkdnd pkgIndex.tcl")
+                    raise FileNotFoundError("\u627e\u4e0d\u5230 tkdnd pkgIndex.tcl")
 
             self.tk.call('lappend', 'auto_path', tkdnd_path)
             self.tk.call('package', 'require', 'tkdnd')
             self._setup_dnd_bindings()
             self.drop_enabled = True
         except Exception as e:
-            print(f"拖拽功能初始化失败: {e}")
-            self.drop_feedback.configure(text="\u26a0\ufe0f 拖拽不可用")
+            print(f"\u62d6\u62fd\u529f\u80fd\u521d\u59cb\u5316\u5931\u8d25: {e}")
+            self.drop_feedback.configure(text="\u26a0\ufe0f \u62d6\u62fd\u4e0d\u53ef\u7528")
 
     def _setup_dnd_bindings(self):
         self.tk.call('tkdnd::drop_target', 'register', self._w, 'DND_Files')
-        drop_cmd = self.register(self._on_drop_raw)
-        self.tk.call('bind', self._w, '<<Drop:DND_Files>>', drop_cmd + ' %D')
-        enter_cmd = self.register(self._on_drag_enter_raw)
-        self.tk.call('bind', self._w, '<<DragEnter>>', enter_cmd + ' %D')
-        leave_cmd = self.register(self._on_drag_leave_raw)
-        self.tk.call('bind', self._w, '<<DragLeave>>', leave_cmd)
+        self.tk.call('bind', self._w, '<<Drop:DND_Files>>', self.register(self._on_drop_raw) + ' %D')
+        self.tk.call('bind', self._w, '<<DragEnter>>', self.register(self._on_drag_enter_raw) + ' %D')
+        self.tk.call('bind', self._w, '<<DragLeave>>', self.register(self._on_drag_leave_raw))
 
     def _on_drop_raw(self, data):
-        self.main_card.configure(border_color="#2D2D44", border_width=1)
+        self.main_card.configure(border_color=BORDER_COLOR, border_width=1)
         if '{' in data:
             files = re.findall(r'\{([^}]+)\}', data)
         else:
@@ -458,23 +465,27 @@ class MainApp(ctk.CTk):
 
     def _on_drag_enter_raw(self, data=''):
         self.main_card.configure(border_color="#3B82F6", border_width=2)
-        self.drop_feedback.configure(text="\U0001f4e5 释放以保存文件", text_color="#3B82F6")
+        self.drop_feedback.configure(text="\U0001f4e5 \u91ca\u653e\u4ee5\u4fdd\u5b58\u6587\u4ef6",
+                                      text_color="#3B82F6")
         return 'copy'
 
     def _on_drag_leave_raw(self):
-        self.main_card.configure(border_color="#2D2D44", border_width=1)
-        self.drop_feedback.configure(text="\U0001f4ce 拖拽文件到窗口即可保存", text_color="#4B5563")
+        self.main_card.configure(border_color=BORDER_COLOR, border_width=1)
+        self.drop_feedback.configure(
+            text="\U0001f4ce \u62d6\u62fd\u6587\u4ef6\u5230\u7a97\u53e3\u5373\u53ef\u4fdd\u5b58",
+            text_color="#4B5563")
         return 'copy'
 
     def _show_save_results(self, results):
-        success_count = sum(1 for r in results if r.get('success'))
+        ok = sum(1 for r in results if r.get('success'))
         total = len(results)
-        if success_count > 0:
-            self.drop_feedback.configure(text=f"\u2705 已保存 {success_count}/{total} 个文件",
+        if ok > 0:
+            self.drop_feedback.configure(text=f"\u2705 \u5df2\u4fdd\u5b58 {ok}/{total} \u4e2a\u6587\u4ef6",
                                           text_color="#22C55E")
             if self.calendar_popup and self.calendar_popup.winfo_exists():
                 self.calendar_popup.refresh_dots()
         else:
-            self.drop_feedback.configure(text="\u274c 保存失败", text_color="#EF4444")
+            self.drop_feedback.configure(text="\u274c \u4fdd\u5b58\u5931\u8d25", text_color="#EF4444")
         self.after(3000, lambda: self.drop_feedback.configure(
-            text="\U0001f4ce 拖拽文件到窗口即可保存", text_color="#4B5563"))
+            text="\U0001f4ce \u62d6\u62fd\u6587\u4ef6\u5230\u7a97\u53e3\u5373\u53ef\u4fdd\u5b58",
+            text_color="#4B5563"))

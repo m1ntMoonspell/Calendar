@@ -1,12 +1,44 @@
 """
 设置对话框
-包含：透明度调整、开机自启动
+包含：透明度调整、开机自启动、关闭时最小化到托盘
+配置持久化到 .config.json
 """
 
 import os
 import sys
+import json
 import customtkinter as ctk
 
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".config.json")
+
+
+def load_config():
+    try:
+        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_config(config):
+    try:
+        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Save config error: {e}")
+
+
+def get_config(key, default=None):
+    return load_config().get(key, default)
+
+
+def set_config(key, value):
+    cfg = load_config()
+    cfg[key] = value
+    save_config(cfg)
+
+
+# ---- auto-start helpers ----
 
 def _autostart_dir():
     if sys.platform == 'win32':
@@ -21,15 +53,13 @@ def _autostart_desktop_path():
     return None
 
 
-def _win_autostart_key():
-    return r"Software\Microsoft\Windows\CurrentVersion\Run"
-
-
 def is_autostart_enabled():
     if sys.platform == 'win32':
         try:
             import winreg
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _win_autostart_key(), 0, winreg.KEY_READ)
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                                0, winreg.KEY_READ)
             winreg.QueryValueEx(key, "DesktopAssistant")
             winreg.CloseKey(key)
             return True
@@ -44,8 +74,9 @@ def set_autostart(enabled):
     if sys.platform == 'win32':
         try:
             import winreg
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _win_autostart_key(), 0,
-                                winreg.KEY_SET_VALUE)
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                                0, winreg.KEY_SET_VALUE)
             if enabled:
                 exe = sys.executable.replace('python.exe', 'pythonw.exe')
                 script = os.path.abspath(os.path.join(os.path.dirname(__file__), 'main.py'))
@@ -85,23 +116,26 @@ def set_autostart(enabled):
 class SettingsDialog(ctk.CTkToplevel):
     """设置对话框"""
 
-    def __init__(self, parent, current_alpha=0.95, on_alpha_change=None):
+    def __init__(self, parent, current_alpha=0.95, on_alpha_change=None,
+                 close_to_tray=False, on_close_to_tray_change=None):
         super().__init__(parent)
         self.on_alpha_change = on_alpha_change
+        self.on_close_to_tray_change = on_close_to_tray_change
 
         self.overrideredirect(True)
         self.attributes('-topmost', True)
         self.configure(fg_color="#1E1E2E")
 
         self._alpha_val = current_alpha
+        self._close_to_tray = close_to_tray
         self._autostart = is_autostart_enabled()
 
         self._build_ui()
 
         self.update_idletasks()
         px = parent.winfo_rootx() + parent.winfo_width() // 2 - 150
-        py = parent.winfo_rooty() + parent.winfo_height() // 2 - 100
-        self.geometry(f"300x220+{max(0,px)}+{max(0,py)}")
+        py = parent.winfo_rooty() + parent.winfo_height() // 2 - 130
+        self.geometry(f"300x280+{max(0,px)}+{max(0,py)}")
 
         self.bind('<FocusOut>', lambda e: self.after(200, self._check_focus))
 
@@ -117,7 +151,6 @@ class SettingsDialog(ctk.CTkToplevel):
                              border_width=1, border_color="#374151")
         outer.pack(fill="both", expand=True, padx=2, pady=2)
 
-        # Title bar
         header = ctk.CTkFrame(outer, fg_color="transparent", height=36)
         header.pack(fill="x", padx=10, pady=(8, 0))
         header.pack_propagate(False)
@@ -134,13 +167,10 @@ class SettingsDialog(ctk.CTkToplevel):
         # Transparency slider
         alpha_frame = ctk.CTkFrame(outer, fg_color="transparent")
         alpha_frame.pack(fill="x", padx=16, pady=(12, 4))
-
         ctk.CTkLabel(alpha_frame, text="\u900f\u660e\u5ea6",
                      font=ctk.CTkFont(size=13), text_color="#9CA3AF").pack(side="left")
-
         self._alpha_label = ctk.CTkLabel(alpha_frame, text=f"{int(self._alpha_val*100)}%",
-                                          font=ctk.CTkFont(size=12), text_color="#60A5FA",
-                                          width=40)
+                                          font=ctk.CTkFont(size=12), text_color="#60A5FA", width=40)
         self._alpha_label.pack(side="right")
 
         self._slider = ctk.CTkSlider(outer, from_=20, to=100, number_of_steps=16,
@@ -149,20 +179,30 @@ class SettingsDialog(ctk.CTkToplevel):
                                       button_color="#60A5FA", button_hover_color="#93C5FD",
                                       command=self._on_slider)
         self._slider.set(self._alpha_val * 100)
-        self._slider.pack(padx=16, pady=(0, 12))
+        self._slider.pack(padx=16, pady=(0, 10))
 
-        # Separator
+        ctk.CTkFrame(outer, height=1, fg_color="#2D2D44").pack(fill="x", padx=16, pady=2)
+
+        # Close to tray toggle
+        tray_frame = ctk.CTkFrame(outer, fg_color="transparent")
+        tray_frame.pack(fill="x", padx=16, pady=(8, 4))
+        ctk.CTkLabel(tray_frame, text="\u5173\u95ed\u65f6\u6700\u5c0f\u5316\u5230\u6258\u76d8",
+                     font=ctk.CTkFont(size=13), text_color="#9CA3AF").pack(side="left")
+        self._tray_switch = ctk.CTkSwitch(tray_frame, text="", width=44, height=22,
+                                           fg_color="#374151", progress_color="#10B981",
+                                           command=self._on_tray_toggle)
+        if self._close_to_tray:
+            self._tray_switch.select()
+        self._tray_switch.pack(side="right")
+
         ctk.CTkFrame(outer, height=1, fg_color="#2D2D44").pack(fill="x", padx=16, pady=2)
 
         # Auto-start toggle
         auto_frame = ctk.CTkFrame(outer, fg_color="transparent")
         auto_frame.pack(fill="x", padx=16, pady=(8, 4))
-
         ctk.CTkLabel(auto_frame, text="\u5f00\u673a\u81ea\u542f\u52a8",
                      font=ctk.CTkFont(size=13), text_color="#9CA3AF").pack(side="left")
-
-        self._auto_switch = ctk.CTkSwitch(auto_frame, text="",
-                                           width=44, height=22,
+        self._auto_switch = ctk.CTkSwitch(auto_frame, text="", width=44, height=22,
                                            fg_color="#374151", progress_color="#10B981",
                                            command=self._on_autostart_toggle)
         if self._autostart:
@@ -176,6 +216,12 @@ class SettingsDialog(ctk.CTkToplevel):
         if self.on_alpha_change:
             self.on_alpha_change(alpha)
 
+    def _on_tray_toggle(self):
+        enabled = bool(self._tray_switch.get())
+        set_config("close_to_tray", enabled)
+        if self.on_close_to_tray_change:
+            self.on_close_to_tray_change(enabled)
+
     def _on_autostart_toggle(self):
-        enabled = self._auto_switch.get()
+        enabled = bool(self._auto_switch.get())
         set_autostart(enabled)
