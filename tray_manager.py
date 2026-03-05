@@ -105,11 +105,30 @@ class _Win32Tray:
         import ctypes
         from ctypes import wintypes
 
-        WNDCLASS = ctypes.WNDPROC(self._wnd_proc)
+        WNDPROCTYPE = ctypes.WINFUNCTYPE(
+            ctypes.c_long, wintypes.HWND, wintypes.UINT,
+            wintypes.WPARAM, wintypes.LPARAM
+        )
+        self._wnd_proc_cb = WNDPROCTYPE(self._wnd_proc)
+
         hinstance = ctypes.windll.kernel32.GetModuleHandleW(None)
 
-        wc = wintypes.WNDCLASSW()
-        wc.lpfnWndProc = WNDCLASS
+        class WNDCLASSW(ctypes.Structure):
+            _fields_ = [
+                ("style", wintypes.UINT),
+                ("lpfnWndProc", WNDPROCTYPE),
+                ("cbClsExtra", ctypes.c_int),
+                ("cbWndExtra", ctypes.c_int),
+                ("hInstance", wintypes.HANDLE),
+                ("hIcon", wintypes.HANDLE),
+                ("hCursor", wintypes.HANDLE),
+                ("hbrBackground", wintypes.HANDLE),
+                ("lpszMenuName", wintypes.LPCWSTR),
+                ("lpszClassName", wintypes.LPCWSTR),
+            ]
+
+        wc = WNDCLASSW()
+        wc.lpfnWndProc = self._wnd_proc_cb
         wc.hInstance = hinstance
         wc.lpszClassName = "DesktopAssistantTray"
         ctypes.windll.user32.RegisterClassW(ctypes.byref(wc))
@@ -118,7 +137,6 @@ class _Win32Tray:
             0, "DesktopAssistantTray", "Tray", 0,
             0, 0, 0, 0, None, None, hinstance, None)
 
-        # NOTIFYICONDATAW
         nid = _make_nid(self._hwnd, self._hicon, self.WM_TRAYICON,
                          "\u684c\u9762\u52a9\u624b")
         ctypes.windll.shell32.Shell_NotifyIconW(self.NIM_ADD, ctypes.byref(nid))

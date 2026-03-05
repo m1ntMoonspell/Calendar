@@ -270,103 +270,81 @@ class MainApp(ctk.CTk):
             self._restore_bg()
 
     def _apply_transparent_bg(self):
-        """锁定模式：将所有背景设为 TRANSPARENT_KEY 使其在 Windows 上完全透明"""
+        """锁定模式：窗口边框透明，内容区保留深色背景确保文字无描边"""
         try:
             self.attributes('-transparentcolor', TRANSPARENT_KEY)
         except Exception:
             pass
 
-        # 根窗口 + CTk 容器
+        try:
+            self.configure(fg_color=TRANSPARENT_KEY)
+        except Exception:
+            pass
         tk.Tk.configure(self, bg=TRANSPARENT_KEY)
 
-        # 隐藏不需要的元素
+        self.main_card.configure(corner_radius=0, border_width=0,
+                                  fg_color=TRANSPARENT_KEY)
+
+        self.titlebar.configure(fg_color=TRANSPARENT_KEY)
+        for child in self.titlebar.winfo_children():
+            if isinstance(child, ctk.CTkFrame):
+                child.configure(fg_color=TRANSPARENT_KEY)
+
+        for btn in (self._lock_btn, self._close_btn, self._settings_btn):
+            btn.configure(fg_color=TITLEBAR_BG)
+            canvas = getattr(btn, '_canvas', None)
+            if canvas:
+                try:
+                    canvas.configure(bg=TITLEBAR_BG)
+                except Exception:
+                    pass
+
+        self.title_lbl.pack_forget()
+
+        self.content.configure(fg_color=NORMAL_BG, corner_radius=12)
+
         self._sep_line.pack_forget()
         self._resize_handle.place_forget()
+        self.drop_feedback.pack_forget()
 
-        # 递归处理所有 widget：设置底层 bg + canvas items
-        self._make_all_transparent(self)
-
-        # 日历按钮保持可见（恢复其颜色）
         self.calendar_btn.configure(fg_color=BORDER_COLOR)
-        if hasattr(self.calendar_btn, '_canvas'):
-            for item in self.calendar_btn._canvas.find_all():
-                if self.calendar_btn._canvas.type(item) in ('rectangle', 'oval'):
-                    self.calendar_btn._canvas.itemconfigure(
-                        item, fill=BORDER_COLOR, outline=BORDER_COLOR)
 
     def _restore_bg(self):
-        """解锁模式：强制所有 CTk 控件重绘恢复正常外观"""
+        """解锁模式：恢复正常外观"""
         try:
             self.attributes('-transparentcolor', '')
         except Exception:
             pass
 
         default_bg = ctk.ThemeManager.theme["CTk"]["fg_color"][1]
+        try:
+            self.configure(fg_color=default_bg)
+        except Exception:
+            pass
         tk.Tk.configure(self, bg=default_bg)
 
-        # 恢复容器颜色
-        self.main_card.configure(fg_color=NORMAL_BG, border_width=1, border_color=BORDER_COLOR)
+        self.main_card.configure(fg_color=NORMAL_BG, corner_radius=16,
+                                  border_width=1, border_color=BORDER_COLOR)
+
         self.titlebar.configure(fg_color=TITLEBAR_BG)
+        for child in self.titlebar.winfo_children():
+            if isinstance(child, ctk.CTkFrame):
+                child.configure(fg_color="transparent")
+
+        for btn in (self._lock_btn, self._close_btn, self._settings_btn):
+            btn.configure(fg_color="transparent")
+
+        self.title_lbl.pack(side="left", padx=2)
+
         self.content.configure(fg_color="transparent")
 
-        # 强制所有 CTk 控件重新绘制
         self._force_ctk_redraw(self)
 
         self._sep_line.pack(fill="x", padx=10, pady=4, before=self.calendar_btn)
         self._sep_line.configure(fg_color=BORDER_COLOR)
         self._resize_handle.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
+        self.drop_feedback.pack(pady=(2, 0))
         self.calendar_btn.configure(fg_color=BORDER_COLOR)
-
-    @staticmethod
-    def _make_all_transparent(widget):
-        """递归设置所有 widget 的底层 bg + canvas items 为 TRANSPARENT_KEY"""
-        # 设置 tkinter 级别的 bg
-        try:
-            widget.configure(bg=TRANSPARENT_KEY)
-        except Exception:
-            pass
-
-        # CTk widget 的 fg_color
-        if isinstance(widget, (ctk.CTkFrame, ctk.CTkLabel)):
-            try:
-                widget.configure(fg_color=TRANSPARENT_KEY)
-            except Exception:
-                pass
-
-        # 内部 canvas：隐藏所有矩形/椭圆背景 items
-        canvas = getattr(widget, '_canvas', None)
-        if canvas:
-            try:
-                canvas.configure(bg=TRANSPARENT_KEY)
-            except Exception:
-                pass
-            for item in canvas.find_all():
-                item_type = canvas.type(item)
-                if item_type in ('rectangle', 'oval', 'polygon'):
-                    try:
-                        canvas.itemconfigure(item, fill=TRANSPARENT_KEY,
-                                              outline=TRANSPARENT_KEY)
-                    except Exception:
-                        pass
-
-        # 内部 label（CTkLabel 的文字载体）
-        label = getattr(widget, '_label', None)
-        if label:
-            try:
-                label.configure(bg=TRANSPARENT_KEY)
-            except Exception:
-                pass
-
-        # CTkButton 内部的 text_label
-        text_label = getattr(widget, '_text_label', None)
-        if text_label:
-            try:
-                text_label.configure(bg=TRANSPARENT_KEY)
-            except Exception:
-                pass
-
-        for child in widget.winfo_children():
-            MainApp._make_all_transparent(child)
 
     @staticmethod
     def _force_ctk_redraw(widget):
