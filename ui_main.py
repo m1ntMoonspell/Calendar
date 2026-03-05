@@ -18,24 +18,21 @@ import holidays as holiday_module
 import database
 import file_manager
 from ui_calendar import MiniCalendarPopup
-from ui_settings import SettingsDialog, get_config, set_config
+from ui_settings import SettingsDialog, get_config
 
 WEEKDAY_NAMES = ['\u661f\u671f\u4e00', '\u661f\u671f\u4e8c', '\u661f\u671f\u4e09',
                  '\u661f\u671f\u56db', '\u661f\u671f\u4e94', '\u661f\u671f\u516d', '\u661f\u671f\u65e5']
 
 BASE_W, BASE_H = 360, 460
 
-# 用于 Windows -transparentcolor 的颜色键
 TRANSPARENT_KEY = '#010101'
 
-# 正常模式的背景色
 NORMAL_BG = '#1E1E2E'
 TITLEBAR_BG = '#16162A'
 BORDER_COLOR = '#2D2D44'
 
 
 class MainApp(ctk.CTk):
-    """主台历应用"""
 
     def __init__(self):
         super().__init__()
@@ -61,7 +58,6 @@ class MainApp(ctk.CTk):
         self._min_h = 360
         self._settings_popup = None
         self._close_to_tray = get_config("close_to_tray", False)
-
         self.tray = None
 
         self._build_ui()
@@ -78,6 +74,10 @@ class MainApp(ctk.CTk):
         self.bind('<Configure>', self._on_configure)
         self._set_icon()
 
+        # Windows 下强制显示任务栏图标（overrideredirect 窗口默认不显示）
+        if sys.platform == 'win32':
+            self.after(100, self._force_taskbar_icon)
+
     def _set_icon(self):
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
         if os.path.exists(icon_path):
@@ -88,6 +88,22 @@ class MainApp(ctk.CTk):
                 self.iconphoto(False, self._icon_photo)
             except Exception:
                 pass
+
+    def _force_taskbar_icon(self):
+        """Windows: 强制 overrideredirect 窗口显示在任务栏"""
+        try:
+            import ctypes
+            GWL_EXSTYLE = -20
+            WS_EX_APPWINDOW = 0x00040000
+            WS_EX_TOOLWINDOW = 0x00000080
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            style = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            self.withdraw()
+            self.after(50, self.deiconify)
+        except Exception:
+            pass
 
     def _build_ui(self):
         self.main_card = ctk.CTkFrame(self, corner_radius=16, fg_color=NORMAL_BG,
@@ -107,7 +123,6 @@ class MainApp(ctk.CTk):
                                        text_color="#9CA3AF")
         self.title_lbl.pack(side="left", padx=2)
 
-        # Close button
         self._close_btn = ctk.CTkButton(
             self.titlebar, text="\u2715", width=30, height=26,
             fg_color="transparent", hover_color="#EF4444",
@@ -115,7 +130,6 @@ class MainApp(ctk.CTk):
             corner_radius=6, command=self._on_close)
         self._close_btn.pack(side="right", padx=(0, 4))
 
-        # Lock button (includes topmost)
         self._lock_btn = ctk.CTkButton(
             self.titlebar, text="\U0001f513", width=30, height=26,
             fg_color="transparent", hover_color="#374151",
@@ -123,7 +137,6 @@ class MainApp(ctk.CTk):
             corner_radius=6, command=self._toggle_lock)
         self._lock_btn.pack(side="right", padx=1)
 
-        # Settings button
         self._settings_btn = ctk.CTkButton(
             self.titlebar, text="\u2699", width=30, height=26,
             fg_color="transparent", hover_color="#374151",
@@ -136,12 +149,9 @@ class MainApp(ctk.CTk):
         self.title_lbl.bind('<Button-1>', self._start_drag)
         self.title_lbl.bind('<B1-Motion>', self._do_drag)
 
-        # ============ 内容区 ============
+        # ============ 内容区（无红色装饰线）============
         self.content = ctk.CTkFrame(self.main_card, fg_color="transparent")
         self.content.pack(fill="both", expand=True, padx=15, pady=(8, 10))
-
-        self.deco_line = ctk.CTkFrame(self.content, height=4, corner_radius=2, fg_color="#EF4444")
-        self.deco_line.pack(fill="x", padx=15, pady=(0, 8))
 
         today = date.today()
         weekday = WEEKDAY_NAMES[today.weekday()]
@@ -151,7 +161,7 @@ class MainApp(ctk.CTk):
             text=f"{today.year}\u5e74{today.month}\u6708{today.day}\u65e5 {weekday}",
             font=ctk.CTkFont(family="Microsoft YaHei", size=15, weight="bold"),
             text_color="#E5E7EB")
-        self.date_label.pack(pady=(2, 0))
+        self.date_label.pack(pady=(6, 0))
 
         self.holiday_name_label = ctk.CTkLabel(
             self.content, text="\u6b63\u5728\u83b7\u53d6\u8282\u5047\u65e5\u4fe1\u606f...",
@@ -194,7 +204,8 @@ class MainApp(ctk.CTk):
         self.calendar_btn.pack(pady=6)
 
         self.drop_feedback = ctk.CTkLabel(
-            self.content, text="\U0001f4ce \u62d6\u62fd\u6587\u4ef6\u5230\u7a97\u53e3\u5373\u53ef\u4fdd\u5b58",
+            self.content,
+            text="\U0001f4ce \u62d6\u62fd\u6587\u4ef6\u5230\u7a97\u53e3\u5373\u53ef\u4fdd\u5b58",
             font=ctk.CTkFont(family="Microsoft YaHei", size=10), text_color="#4B5563")
         self.drop_feedback.pack(pady=(2, 0))
 
@@ -259,33 +270,32 @@ class MainApp(ctk.CTk):
             self._restore_bg()
 
     def _apply_transparent_bg(self):
-        """锁定模式：所有背景变为透明键，Windows 下 -transparentcolor 使该颜色完全透明"""
+        """锁定模式：将所有背景设为 TRANSPARENT_KEY 使其在 Windows 上完全透明"""
         try:
             self.attributes('-transparentcolor', TRANSPARENT_KEY)
         except Exception:
             pass
 
-        # CTk 层级
+        # 根窗口 + CTk 容器
         tk.Tk.configure(self, bg=TRANSPARENT_KEY)
-        try:
-            self.configure(fg_color=TRANSPARENT_KEY)
-        except Exception:
-            pass
-        self.main_card.configure(fg_color=TRANSPARENT_KEY, border_width=0,
-                                  border_color=TRANSPARENT_KEY)
-        self.titlebar.configure(fg_color=TRANSPARENT_KEY)
-        self.content.configure(fg_color=TRANSPARENT_KEY)
 
-        # 递归设置所有底层 tkinter widget 的 bg 为 TRANSPARENT_KEY
-        # 这会穿透 CTkLabel/CTkButton 内部的 Canvas 和 Label，彻底消除黑边
-        self._set_all_tk_bg(self, TRANSPARENT_KEY)
-
-        self.deco_line.pack_forget()
+        # 隐藏不需要的元素
         self._sep_line.pack_forget()
         self._resize_handle.place_forget()
 
+        # 递归处理所有 widget：设置底层 bg + canvas items
+        self._make_all_transparent(self)
+
+        # 日历按钮保持可见（恢复其颜色）
+        self.calendar_btn.configure(fg_color=BORDER_COLOR)
+        if hasattr(self.calendar_btn, '_canvas'):
+            for item in self.calendar_btn._canvas.find_all():
+                if self.calendar_btn._canvas.type(item) in ('rectangle', 'oval'):
+                    self.calendar_btn._canvas.itemconfigure(
+                        item, fill=BORDER_COLOR, outline=BORDER_COLOR)
+
     def _restore_bg(self):
-        """解锁模式：恢复正常背景，需要完整重绘所有 CTk 控件"""
+        """解锁模式：强制所有 CTk 控件重绘恢复正常外观"""
         try:
             self.attributes('-transparentcolor', '')
         except Exception:
@@ -293,47 +303,74 @@ class MainApp(ctk.CTk):
 
         default_bg = ctk.ThemeManager.theme["CTk"]["fg_color"][1]
         tk.Tk.configure(self, bg=default_bg)
-        try:
-            self.configure(fg_color=default_bg)
-        except Exception:
-            pass
+
+        # 恢复容器颜色
         self.main_card.configure(fg_color=NORMAL_BG, border_width=1, border_color=BORDER_COLOR)
         self.titlebar.configure(fg_color=TITLEBAR_BG)
         self.content.configure(fg_color="transparent")
 
-        # 强制所有 CTk 控件重绘（恢复正确的背景色）
+        # 强制所有 CTk 控件重新绘制
         self._force_ctk_redraw(self)
 
-        self.deco_line.pack(fill="x", padx=15, pady=(0, 8),
-                            before=self.date_label)
-        self.deco_line.configure(fg_color="#EF4444")
-        self._sep_line.pack(fill="x", padx=10, pady=4,
-                            before=self.calendar_btn)
+        self._sep_line.pack(fill="x", padx=10, pady=4, before=self.calendar_btn)
         self._sep_line.configure(fg_color=BORDER_COLOR)
         self._resize_handle.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
         self.calendar_btn.configure(fg_color=BORDER_COLOR)
 
     @staticmethod
-    def _set_all_tk_bg(widget, color):
-        """递归设置所有底层 tkinter widget（Canvas/Label/Frame）的 bg 属性"""
+    def _make_all_transparent(widget):
+        """递归设置所有 widget 的底层 bg + canvas items 为 TRANSPARENT_KEY"""
+        # 设置 tkinter 级别的 bg
         try:
-            widget.configure(bg=color)
-        except (tk.TclError, Exception):
+            widget.configure(bg=TRANSPARENT_KEY)
+        except Exception:
             pass
-        # CTk 控件内部组件
-        for attr in ('_canvas', '_text_label', '_label', '_entry'):
-            inner = getattr(widget, attr, None)
-            if inner:
-                try:
-                    inner.configure(bg=color)
-                except (tk.TclError, Exception):
-                    pass
+
+        # CTk widget 的 fg_color
+        if isinstance(widget, (ctk.CTkFrame, ctk.CTkLabel)):
+            try:
+                widget.configure(fg_color=TRANSPARENT_KEY)
+            except Exception:
+                pass
+
+        # 内部 canvas：隐藏所有矩形/椭圆背景 items
+        canvas = getattr(widget, '_canvas', None)
+        if canvas:
+            try:
+                canvas.configure(bg=TRANSPARENT_KEY)
+            except Exception:
+                pass
+            for item in canvas.find_all():
+                item_type = canvas.type(item)
+                if item_type in ('rectangle', 'oval', 'polygon'):
+                    try:
+                        canvas.itemconfigure(item, fill=TRANSPARENT_KEY,
+                                              outline=TRANSPARENT_KEY)
+                    except Exception:
+                        pass
+
+        # 内部 label（CTkLabel 的文字载体）
+        label = getattr(widget, '_label', None)
+        if label:
+            try:
+                label.configure(bg=TRANSPARENT_KEY)
+            except Exception:
+                pass
+
+        # CTkButton 内部的 text_label
+        text_label = getattr(widget, '_text_label', None)
+        if text_label:
+            try:
+                text_label.configure(bg=TRANSPARENT_KEY)
+            except Exception:
+                pass
+
         for child in widget.winfo_children():
-            MainApp._set_all_tk_bg(child, color)
+            MainApp._make_all_transparent(child)
 
     @staticmethod
     def _force_ctk_redraw(widget):
-        """强制所有 CTk 控件重绘（调用内部 _draw 方法恢复正确颜色）"""
+        """递归调用所有 CTk 控件的 _draw() 强制重绘"""
         if hasattr(widget, '_draw'):
             try:
                 widget._draw()
@@ -421,8 +458,6 @@ class MainApp(ctk.CTk):
                 self.days_off_label.configure(text="")
         except Exception as e:
             self.holiday_name_label.configure(text="\u83b7\u53d6\u8282\u5047\u65e5\u4fe1\u606f\u5931\u8d25")
-            print(f"Holiday error: {e}")
-
         today = date.today()
         weekday = WEEKDAY_NAMES[today.weekday()]
         self.date_label.configure(
@@ -433,22 +468,17 @@ class MainApp(ctk.CTk):
     # ======== 日历 ========
 
     def _toggle_calendar(self):
-        # 如果弹窗已经存在且有效，销毁它
         if self.calendar_popup is not None:
             try:
                 if self.calendar_popup.winfo_exists():
                     self.calendar_popup.destroy()
-                    # on_destroy_cb 会清空 self.calendar_popup
                     return
             except Exception:
                 pass
             self.calendar_popup = None
             return
-
-        # 创建新的弹窗
         self.calendar_popup = MiniCalendarPopup(
-            self,
-            anchor_widget=self.calendar_btn,
+            self, anchor_widget=self.calendar_btn,
             on_change=self._on_data_changed,
             on_destroy=self._on_calendar_destroyed)
 
@@ -469,7 +499,6 @@ class MainApp(ctk.CTk):
             bits = struct.calcsize('P') * 8
             arch = 'x64' if bits == 64 else 'x86'
             platform_path = os.path.join(base_tkdnd, f'win-{arch}')
-
             if os.path.exists(os.path.join(platform_path, 'pkgIndex.tcl')):
                 tkdnd_path = platform_path
             elif os.path.exists(os.path.join(base_tkdnd, 'pkgIndex.tcl')):
@@ -479,19 +508,16 @@ class MainApp(ctk.CTk):
                 for item in os.listdir(base_tkdnd):
                     candidate = os.path.join(base_tkdnd, item)
                     if os.path.isdir(candidate) and os.path.exists(
-                        os.path.join(candidate, 'pkgIndex.tcl')
-                    ):
+                        os.path.join(candidate, 'pkgIndex.tcl')):
                         tkdnd_path = candidate
                         break
                 if not tkdnd_path:
-                    raise FileNotFoundError("\u627e\u4e0d\u5230 tkdnd pkgIndex.tcl")
-
+                    raise FileNotFoundError("tkdnd not found")
             self.tk.call('lappend', 'auto_path', tkdnd_path)
             self.tk.call('package', 'require', 'tkdnd')
             self._setup_dnd_bindings()
             self.drop_enabled = True
         except Exception as e:
-            print(f"\u62d6\u62fd\u529f\u80fd\u521d\u59cb\u5316\u5931\u8d25: {e}")
             self.drop_feedback.configure(text="\u26a0\ufe0f \u62d6\u62fd\u4e0d\u53ef\u7528")
 
     def _setup_dnd_bindings(self):
@@ -502,38 +528,28 @@ class MainApp(ctk.CTk):
 
     def _on_drop_raw(self, data):
         self.main_card.configure(border_color=BORDER_COLOR, border_width=1)
-        if '{' in data:
-            files = re.findall(r'\{([^}]+)\}', data)
-        else:
-            files = [f for f in data.split() if f.strip()]
+        files = re.findall(r'\{([^}]+)\}', data) if '{' in data else [f for f in data.split() if f.strip()]
         if files:
-            results = file_manager.save_dropped_files(files)
-            self._show_save_results(results)
+            self._show_save_results(file_manager.save_dropped_files(files))
         return 'copy'
 
     def _on_drag_enter_raw(self, data=''):
         self.main_card.configure(border_color="#3B82F6", border_width=2)
-        self.drop_feedback.configure(text="\U0001f4e5 \u91ca\u653e\u4ee5\u4fdd\u5b58\u6587\u4ef6",
-                                      text_color="#3B82F6")
+        self.drop_feedback.configure(text="\U0001f4e5 \u91ca\u653e\u4ee5\u4fdd\u5b58\u6587\u4ef6", text_color="#3B82F6")
         return 'copy'
 
     def _on_drag_leave_raw(self):
         self.main_card.configure(border_color=BORDER_COLOR, border_width=1)
-        self.drop_feedback.configure(
-            text="\U0001f4ce \u62d6\u62fd\u6587\u4ef6\u5230\u7a97\u53e3\u5373\u53ef\u4fdd\u5b58",
-            text_color="#4B5563")
+        self.drop_feedback.configure(text="\U0001f4ce \u62d6\u62fd\u6587\u4ef6\u5230\u7a97\u53e3\u5373\u53ef\u4fdd\u5b58", text_color="#4B5563")
         return 'copy'
 
     def _show_save_results(self, results):
         ok = sum(1 for r in results if r.get('success'))
-        total = len(results)
         if ok > 0:
-            self.drop_feedback.configure(text=f"\u2705 \u5df2\u4fdd\u5b58 {ok}/{total} \u4e2a\u6587\u4ef6",
-                                          text_color="#22C55E")
+            self.drop_feedback.configure(text=f"\u2705 \u5df2\u4fdd\u5b58 {ok}/{len(results)} \u4e2a\u6587\u4ef6", text_color="#22C55E")
             if self.calendar_popup and self.calendar_popup.winfo_exists():
                 self.calendar_popup.refresh_dots()
         else:
             self.drop_feedback.configure(text="\u274c \u4fdd\u5b58\u5931\u8d25", text_color="#EF4444")
         self.after(3000, lambda: self.drop_feedback.configure(
-            text="\U0001f4ce \u62d6\u62fd\u6587\u4ef6\u5230\u7a97\u53e3\u5373\u53ef\u4fdd\u5b58",
-            text_color="#4B5563"))
+            text="\U0001f4ce \u62d6\u62fd\u6587\u4ef6\u5230\u7a97\u53e3\u5373\u53ef\u4fdd\u5b58", text_color="#4B5563"))
