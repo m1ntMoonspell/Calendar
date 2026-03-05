@@ -1,1 +1,8 @@
+<<<<<<< HEAD
 
+=======
+saved_files
+__pycache__/
+.cache/
+*.db
+>>>>>>> e8f3250a57791e709b0da46d7d29ef2a62ad0113

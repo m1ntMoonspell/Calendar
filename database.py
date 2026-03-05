@@ -25,9 +25,15 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT NOT NULL,
             content TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            alarm_time TEXT
         )
     """)
+    # 迁移：为旧表添加 alarm_time 列
+    try:
+        cursor.execute("SELECT alarm_time FROM plans LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE plans ADD COLUMN alarm_time TEXT")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS saved_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +73,36 @@ def update_plan(plan_id, content):
     )
     conn.commit()
     conn.close()
+
+
+def update_plan_alarm(plan_id, alarm_time):
+    """设置/更新计划闹钟 (alarm_time 格式 'HH:MM' 或 None 清除)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE plans SET alarm_time = ? WHERE id = ?",
+        (alarm_time, plan_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_due_alarms(date_str, time_str):
+    """获取指定日期中到期的闹钟 (alarm_time <= time_str)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM plans WHERE date = ? AND alarm_time IS NOT NULL AND alarm_time <= ?",
+        (date_str, time_str)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def clear_alarm(plan_id):
+    """清除闹钟"""
+    update_plan_alarm(plan_id, None)
 
 
 def get_plans_by_date(date_str):

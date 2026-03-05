@@ -4,31 +4,68 @@ iOS风格 Windows 桌面助手 — 入口
 
 import sys
 import os
+from datetime import datetime, date
 
-# 确保模块路径正确
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import database
 
 
+def _check_alarms(app):
+    """每 30 秒检查一次到期闹钟"""
+    try:
+        now = datetime.now()
+        date_str = now.date().isoformat()
+        time_str = now.strftime("%H:%M")
+        due = database.get_due_alarms(date_str, time_str)
+        for plan in due:
+            _fire_notification(plan['content'])
+            database.clear_alarm(plan['id'])
+    except Exception as e:
+        print(f"Alarm check error: {e}")
+
+    app.after(30000, lambda: _check_alarms(app))
+
+
+def _fire_notification(message):
+    """通过 PySide6 独立进程弹出通知"""
+    try:
+        from notification import show_notification
+        show_notification("\u23f0 计划提醒", message)
+    except Exception as e:
+        print(f"Notification error: {e}")
+
+
 def main():
-    # 初始化数据库
     database.init_db()
 
-    # 尝试使用 tkinterdnd2 增强版
     try:
         import tkinterdnd2
-        # 设置 tkinterdnd2 的 DLL 路径（如果是独立安装）
         os.environ['TKDND_LIBRARY'] = os.path.join(
             os.path.dirname(tkinterdnd2.__file__), 'tkdnd'
         )
     except ImportError:
-        print("提示: 未安装 tkinterdnd2，拖拽功能将使用文件选择对话框替代")
-        print("安装命令: pip install tkinterdnd2")
+        pass
 
-    # 创建主应用
     from ui_main import MainApp
     app = MainApp()
+
+    # 系统托盘
+    try:
+        from tray_manager import TrayManager, TRAY_AVAILABLE
+        if TRAY_AVAILABLE:
+            tray = TrayManager(
+                on_show=lambda: app.after(0, app.show_from_tray),
+                on_quit=lambda: app.after(0, app.quit_app),
+            )
+            app.tray = tray
+            tray.start()
+    except Exception as e:
+        print(f"Tray init error: {e}")
+
+    # 启动闹钟检查器
+    app.after(5000, lambda: _check_alarms(app))
+
     app.mainloop()
 
 
