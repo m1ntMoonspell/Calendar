@@ -104,7 +104,8 @@ class PlanViewDialog(ctk.CTkToplevel):
         plans = database.get_plans_by_date(self.date_str)
         for plan in plans:
             self._add_entry(plan_id=plan['id'], content=plan['content'],
-                            alarm_time=plan.get('alarm_time'))
+                            alarm_time=plan.get('alarm_time'),
+                            created_at=plan.get('created_at', ''))
         self._add_entry()
 
         # === 分割线 ===
@@ -169,7 +170,7 @@ class PlanViewDialog(ctk.CTkToplevel):
         self.geometry(f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}")
 
     # ---- entries ----
-    def _add_entry(self, plan_id=None, content="", alarm_time=None):
+    def _add_entry(self, plan_id=None, content="", alarm_time=None, created_at=None):
         row = ctk.CTkFrame(self.plan_frame, fg_color="transparent")
         row.pack(fill="x", padx=4, pady=2)
 
@@ -186,6 +187,11 @@ class PlanViewDialog(ctk.CTkToplevel):
                                   font=ctk.CTkFont(size=12), text_color="#6B7280",
                                   width=22, anchor="e")
         num_label.pack(side="left", padx=(0, 3))
+
+        if created_at and len(created_at) >= 16:
+            ctk.CTkLabel(row, text=created_at[11:16],
+                         font=ctk.CTkFont(size=10), text_color="#4B5563",
+                         width=36, anchor="e").pack(side="right", padx=(2, 0))
 
         entry = ctk.CTkEntry(row, font=ctk.CTkFont(size=12), height=30,
                               border_width=0, fg_color="#1E1E2E",
@@ -298,13 +304,46 @@ class PlanViewDialog(ctk.CTkToplevel):
 
     def _open_file(self, path):
         import os
-        if os.path.exists(path):
-            if sys.platform == 'win32':
-                os.startfile(path)
-            else:
-                import subprocess
-                subprocess.Popen(['xdg-open', path], stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL)
+        if path.startswith("http://") or path.startswith("https://"):
+            self._download_and_open(path)
+        elif os.path.exists(path):
+            self._open_local_file(path)
+        else:
+            print(f"File not found: {path}")
+
+    def _open_local_file(self, path):
+        import os
+        if sys.platform == 'win32':
+            os.startfile(path)
+        else:
+            import subprocess
+            subprocess.Popen(['xdg-open', path], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+
+    def _download_and_open(self, url):
+        """从 URL 下载文件后打开"""
+        import os
+        import threading
+        import tempfile
+
+        def _do_download():
+            try:
+                import requests
+                resp = requests.get(url, timeout=30, stream=True)
+                if resp.status_code == 200:
+                    filename = url.split("/")[-1].split("?")[0] or "download"
+                    tmp_path = os.path.join(tempfile.gettempdir(),
+                                            "calendar_" + filename)
+                    with open(tmp_path, 'wb') as f:
+                        for chunk in resp.iter_content(8192):
+                            f.write(chunk)
+                    self.after(0, lambda: self._open_local_file(tmp_path))
+                else:
+                    print(f"Download failed: HTTP {resp.status_code}")
+            except Exception as e:
+                print(f"Download error: {e}")
+
+        threading.Thread(target=_do_download, daemon=True).start()
 
     def _delete_file(self, file_id, file_path, row_widget):
         """删除文件记录和物理文件"""

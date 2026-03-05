@@ -68,10 +68,23 @@ class MiniCalendarPopup(ctk.CTkToplevel):
         # 延迟定位，确保窗口已经完全创建
         self.after(50, self.reposition)
 
-        # 点击日历窗口外部时自动关闭
+        # 点击主窗口内（日历外区域）关闭
         self._parent_bind_id = self.parent_window.bind(
             '<Button-1>', self._on_parent_click, add='+')
         self.bind('<Escape>', lambda e: self.destroy())
+
+        # 点击软件外部（桌面、其他窗口）时也关闭
+        self.bind('<FocusOut>', lambda e: self.after(150, self._check_focus_close))
+
+    def _check_focus_close(self):
+        """窗口失焦时检查是否应关闭（用户点击了软件以外的区域）"""
+        try:
+            if not self.winfo_exists():
+                return
+            if self.focus_get() is None:
+                self.destroy()
+        except Exception:
+            pass
 
     def _on_parent_click(self, event):
         """主窗口被点击时关闭日历弹窗（点击日历按钮本身除外，由 toggle 处理）"""
