@@ -259,36 +259,33 @@ class MainApp(ctk.CTk):
             self._restore_bg()
 
     def _apply_transparent_bg(self):
-        """锁定模式：背景色变为透明键（Windows 下完全透明穿透），内容保持显示"""
+        """锁定模式：所有背景变为透明键，Windows 下 -transparentcolor 使该颜色完全透明"""
         try:
             self.attributes('-transparentcolor', TRANSPARENT_KEY)
         except Exception:
             pass
 
-        # 设置所有层级的背景为 TRANSPARENT_KEY
-        # 1. tkinter 根窗口本身的 bg（解决四角黑色残留）
+        # CTk 层级
         tk.Tk.configure(self, bg=TRANSPARENT_KEY)
-        # 2. CTk 层级
         try:
             self.configure(fg_color=TRANSPARENT_KEY)
         except Exception:
             pass
-        # 3. 主卡片
         self.main_card.configure(fg_color=TRANSPARENT_KEY, border_width=0,
                                   border_color=TRANSPARENT_KEY)
         self.titlebar.configure(fg_color=TRANSPARENT_KEY)
         self.content.configure(fg_color=TRANSPARENT_KEY)
 
-        # 4. 所有子 widget 的 fg_color 也设为 TRANSPARENT_KEY（解决文字黑色描边）
-        self._set_children_bg(self.titlebar, TRANSPARENT_KEY)
-        self._set_children_bg(self.content, TRANSPARENT_KEY)
+        # 递归设置所有底层 tkinter widget 的 bg 为 TRANSPARENT_KEY
+        # 这会穿透 CTkLabel/CTkButton 内部的 Canvas 和 Label，彻底消除黑边
+        self._set_all_tk_bg(self, TRANSPARENT_KEY)
 
         self.deco_line.pack_forget()
         self._sep_line.pack_forget()
         self._resize_handle.place_forget()
 
     def _restore_bg(self):
-        """解锁模式：恢复正常背景"""
+        """解锁模式：恢复正常背景，需要完整重绘所有 CTk 控件"""
         try:
             self.attributes('-transparentcolor', '')
         except Exception:
@@ -304,9 +301,8 @@ class MainApp(ctk.CTk):
         self.titlebar.configure(fg_color=TITLEBAR_BG)
         self.content.configure(fg_color="transparent")
 
-        # 恢复所有子 widget 的 fg_color 为 "transparent"（继承父色）
-        self._set_children_bg(self.titlebar, "transparent")
-        self._set_children_bg(self.content, "transparent")
+        # 强制所有 CTk 控件重绘（恢复正确的背景色）
+        self._force_ctk_redraw(self)
 
         self.deco_line.pack(fill="x", padx=15, pady=(0, 8),
                             before=self.date_label)
@@ -315,22 +311,36 @@ class MainApp(ctk.CTk):
                             before=self.calendar_btn)
         self._sep_line.configure(fg_color=BORDER_COLOR)
         self._resize_handle.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
-
-        # 恢复日历按钮特殊颜色
         self.calendar_btn.configure(fg_color=BORDER_COLOR)
 
     @staticmethod
-    def _set_children_bg(parent, color):
-        """递归设置所有 CTk 子 widget 的 fg_color"""
-        for child in parent.winfo_children():
+    def _set_all_tk_bg(widget, color):
+        """递归设置所有底层 tkinter widget（Canvas/Label/Frame）的 bg 属性"""
+        try:
+            widget.configure(bg=color)
+        except (tk.TclError, Exception):
+            pass
+        # CTk 控件内部组件
+        for attr in ('_canvas', '_text_label', '_label', '_entry'):
+            inner = getattr(widget, attr, None)
+            if inner:
+                try:
+                    inner.configure(bg=color)
+                except (tk.TclError, Exception):
+                    pass
+        for child in widget.winfo_children():
+            MainApp._set_all_tk_bg(child, color)
+
+    @staticmethod
+    def _force_ctk_redraw(widget):
+        """强制所有 CTk 控件重绘（调用内部 _draw 方法恢复正确颜色）"""
+        if hasattr(widget, '_draw'):
             try:
-                if isinstance(child, (ctk.CTkLabel, ctk.CTkFrame)):
-                    child.configure(fg_color=color)
-                elif isinstance(child, ctk.CTkButton):
-                    child.configure(fg_color=color)
+                widget._draw()
             except Exception:
                 pass
-            MainApp._set_children_bg(child, color)
+        for child in widget.winfo_children():
+            MainApp._force_ctk_redraw(child)
 
     # ======== 设置 ========
 
