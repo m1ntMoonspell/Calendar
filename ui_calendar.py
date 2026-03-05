@@ -104,25 +104,29 @@ class MiniCalendarPopup(ctk.CTkToplevel):
         self.geometry(f"{self._width}x{self._height}+{x}+{y}")
 
     def _build_ui(self):
-        self.configure(fg_color=self.COLORS['bg'])
+        self.configure(fg_color="transparent")
 
-        # 圆角外框
-        main_frame = ctk.CTkFrame(
+        # 圆角外框 — 用 CTkFrame 承载所有内容，Canvas 内嵌其中保证四角圆角
+        self.main_frame = ctk.CTkFrame(
             self,
             fg_color=self.COLORS['bg'],
             corner_radius=14,
             border_width=1,
             border_color="#374151"
         )
-        main_frame.pack(fill="both", expand=True, padx=2, pady=2)
+        self.main_frame.pack(fill="both", expand=True, padx=0, pady=0)
+
+        # 内部容器（保证 Canvas 不溢出圆角区域）
+        inner = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        inner.pack(fill="both", expand=True, padx=10, pady=6)
 
         # 顶部导航
-        nav_frame = ctk.CTkFrame(main_frame, fg_color="transparent", height=self.HEADER_HEIGHT)
-        nav_frame.pack(fill="x", padx=8, pady=(6, 0))
+        nav_frame = ctk.CTkFrame(inner, fg_color="transparent", height=self.HEADER_HEIGHT)
+        nav_frame.pack(fill="x", pady=(2, 0))
         nav_frame.pack_propagate(False)
 
         prev_btn = ctk.CTkButton(
-            nav_frame, text="◀", width=32, height=28,
+            nav_frame, text="\u25c0", width=32, height=28,
             fg_color="transparent", hover_color="#374151",
             text_color=self.COLORS['nav_fg'],
             font=ctk.CTkFont(size=14),
@@ -139,7 +143,7 @@ class MiniCalendarPopup(ctk.CTkToplevel):
         self.month_label.pack(side="left", expand=True)
 
         next_btn = ctk.CTkButton(
-            nav_frame, text="▶", width=32, height=28,
+            nav_frame, text="\u25b6", width=32, height=28,
             fg_color="transparent", hover_color="#374151",
             text_color=self.COLORS['nav_fg'],
             font=ctk.CTkFont(size=14),
@@ -152,14 +156,14 @@ class MiniCalendarPopup(ctk.CTkToplevel):
         canvas_width = self.CELL_SIZE * 7
         canvas_height = self.WEEKDAY_HEIGHT + self.CELL_SIZE * 6 + 10
         self.canvas = tk.Canvas(
-            main_frame,
+            inner,
             width=canvas_width,
             height=canvas_height,
             bg=self.COLORS['bg'],
             highlightthickness=0,
             bd=0
         )
-        self.canvas.pack(padx=8, pady=(0, 6))
+        self.canvas.pack(pady=(0, 2))
 
         # Canvas 事件绑定
         self.canvas.bind('<Button-1>', self._on_click)

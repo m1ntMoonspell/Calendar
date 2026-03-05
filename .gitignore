@@ -1,1 +1,4 @@
 saved_files
+__pycache__/
+.cache/
+*.db
