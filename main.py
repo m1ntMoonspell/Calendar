@@ -40,6 +40,12 @@ def main():
     database.init_db()
 
     try:
+        from sync_client import sync_from_cloud
+        sync_from_cloud()
+    except Exception as e:
+        print(f"Sync init: {e}")
+
+    try:
         import tkinterdnd2
         os.environ['TKDND_LIBRARY'] = os.path.join(
             os.path.dirname(tkinterdnd2.__file__), 'tkdnd'

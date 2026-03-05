@@ -1,0 +1,14 @@
+# QQ 机器人配置文件
+# 复制本文件为 config.yaml 并填入你的信息
+
+# QQ 开放平台 AppID（在 https://q.qq.com 创建机器人后获取）
+appid: ""
+
+# QQ 开放平台 AppSecret
+secret: ""
+
+# 云端同步服务器地址（你部署的 sync_server.py 地址）
+sync_server_url: "http://127.0.0.1:5000"
+
+# 与 sync_server.py 的 SYNC_API_KEY 环境变量一致
+sync_api_key: "change-me-to-a-secure-key"
