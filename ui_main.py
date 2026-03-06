@@ -25,8 +25,6 @@ WEEKDAY_NAMES = ['\u661f\u671f\u4e00', '\u661f\u671f\u4e8c', '\u661f\u671f\u4e09
 
 BASE_W, BASE_H = 360, 460
 
-TRANSPARENT_KEY = '#010101'
-
 NORMAL_BG = '#1E1E2E'
 TITLEBAR_BG = '#16162A'
 BORDER_COLOR = '#2D2D44'
@@ -256,152 +254,47 @@ class MainApp(ctk.CTk):
         new_h = max(self._min_h, self._resize_start_h + event.y_root - self._resize_start_y)
         self.geometry(f"{new_w}x{new_h}")
 
-    # ======== 锁定（置顶 + 位置锁定 + 背景透明） ========
+    # ======== 锁定（PySide6 透明覆盖窗口方案，参考 H75helper） ========
 
     def _toggle_lock(self):
-        self._locked = not self._locked
         if self._locked:
-            self._lock_btn.configure(text="\U0001f512", text_color="#EF4444")
-            self.attributes('-topmost', True)
-            self._apply_transparent_bg()
-        else:
-            self._lock_btn.configure(text="\U0001f513", text_color="#9CA3AF")
-            self.attributes('-topmost', False)
-            self._restore_bg()
+            return
+        self._locked = True
+        self._lock_btn.configure(text="\U0001f512", text_color="#EF4444")
+        self._start_lock_overlay()
 
-    def _apply_transparent_bg(self):
-        """锁定模式：所有背景透明，内容文字正常显示"""
-        try:
-            self.attributes('-transparentcolor', TRANSPARENT_KEY)
-        except Exception:
-            pass
+    def _start_lock_overlay(self):
+        """启动 PySide6 透明覆盖窗口（独立进程），隐藏 tkinter 主窗口"""
+        import subprocess
+        import threading
 
-        try:
-            self.configure(fg_color=TRANSPARENT_KEY)
-        except Exception:
-            pass
-        tk.Tk.configure(self, bg=TRANSPARENT_KEY)
+        x = self.winfo_x()
+        y = self.winfo_y()
+        w = self.winfo_width()
+        h = self.winfo_height()
 
-        self.main_card.configure(corner_radius=0, border_width=0,
-                                  fg_color=TRANSPARENT_KEY)
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lock_overlay.py")
+        self._overlay_proc = subprocess.Popen(
+            [sys.executable, script,
+             "--x", str(x), "--y", str(y), "--w", str(w), "--h", str(h)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
 
-        self._sep_line.pack_forget()
-        self._resize_handle.place_forget()
-        self.drop_feedback.pack_forget()
-        self.title_lbl.pack_forget()
+        self.withdraw()
 
-        self._make_all_transparent(self)
+        def _wait():
+            self._overlay_proc.wait()
+            self.after(0, self._on_overlay_exit)
 
-        self.calendar_btn.configure(fg_color=BORDER_COLOR)
-        if hasattr(self.calendar_btn, '_canvas'):
-            for item in self.calendar_btn._canvas.find_all():
-                if self.calendar_btn._canvas.type(item) in ('rectangle', 'oval'):
-                    self.calendar_btn._canvas.itemconfigure(
-                        item, fill=BORDER_COLOR, outline=BORDER_COLOR)
+        threading.Thread(target=_wait, daemon=True).start()
 
-    def _restore_bg(self):
-        """解锁模式：恢复正常外观"""
-        try:
-            self.attributes('-transparentcolor', '')
-        except Exception:
-            pass
-
-        default_bg = ctk.ThemeManager.theme["CTk"]["fg_color"][1]
-        try:
-            self.configure(fg_color=default_bg)
-        except Exception:
-            pass
-        tk.Tk.configure(self, bg=default_bg)
-
-        self.main_card.configure(fg_color=NORMAL_BG, corner_radius=16,
-                                  border_width=1, border_color=BORDER_COLOR)
-
-        self.titlebar.configure(fg_color=TITLEBAR_BG)
-        for child in self.titlebar.winfo_children():
-            if isinstance(child, ctk.CTkFrame):
-                child.configure(fg_color="transparent")
-
-        for btn in (self._lock_btn, self._close_btn, self._settings_btn):
-            btn.configure(fg_color="transparent")
-
-        self.title_lbl.configure(fg_color="transparent")
-        self.title_lbl.pack(side="left", padx=2)
-
-        self.content.configure(fg_color="transparent")
-
-        for lbl in (self.date_label, self.holiday_name_label,
-                    self.days_label, self.days_unit_label,
-                    self.time_label, self.days_off_label,
-                    self.drop_feedback, self._resize_handle):
-            try:
-                lbl.configure(fg_color="transparent")
-            except Exception:
-                pass
-
-        self._force_ctk_redraw(self)
-
-        self._sep_line.pack(fill="x", padx=10, pady=4, before=self.calendar_btn)
-        self._sep_line.configure(fg_color=BORDER_COLOR)
-        self._resize_handle.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
-        self.drop_feedback.pack(pady=(2, 0))
-        self.calendar_btn.configure(fg_color=BORDER_COLOR)
-
-    @staticmethod
-    def _make_all_transparent(widget):
-        """递归设置所有 widget 的底层 bg + canvas items 为透明"""
-        try:
-            widget.configure(bg=TRANSPARENT_KEY)
-        except Exception:
-            pass
-
-        if isinstance(widget, (ctk.CTkFrame, ctk.CTkLabel, ctk.CTkButton)):
-            try:
-                widget.configure(fg_color=TRANSPARENT_KEY)
-            except Exception:
-                pass
-
-        canvas = getattr(widget, '_canvas', None)
-        if canvas:
-            try:
-                canvas.configure(bg=TRANSPARENT_KEY)
-            except Exception:
-                pass
-            for item in canvas.find_all():
-                item_type = canvas.type(item)
-                if item_type in ('rectangle', 'oval', 'polygon'):
-                    try:
-                        canvas.itemconfigure(item, fill=TRANSPARENT_KEY,
-                                              outline=TRANSPARENT_KEY)
-                    except Exception:
-                        pass
-
-        label = getattr(widget, '_label', None)
-        if label:
-            try:
-                label.configure(bg=TRANSPARENT_KEY)
-            except Exception:
-                pass
-
-        text_label = getattr(widget, '_text_label', None)
-        if text_label:
-            try:
-                text_label.configure(bg=TRANSPARENT_KEY)
-            except Exception:
-                pass
-
-        for child in widget.winfo_children():
-            MainApp._make_all_transparent(child)
-
-    @staticmethod
-    def _force_ctk_redraw(widget):
-        """递归调用所有 CTk 控件的 _draw() 强制重绘"""
-        if hasattr(widget, '_draw'):
-            try:
-                widget._draw()
-            except Exception:
-                pass
-        for child in widget.winfo_children():
-            MainApp._force_ctk_redraw(child)
+    def _on_overlay_exit(self):
+        """覆盖窗口退出后恢复主窗口"""
+        self._locked = False
+        self._lock_btn.configure(text="\U0001f513", text_color="#9CA3AF")
+        self.deiconify()
+        self.lift()
+        self._overlay_proc = None
 
     # ======== 设置 ========
 
